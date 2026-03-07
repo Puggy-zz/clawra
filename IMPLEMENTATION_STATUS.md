@@ -7,7 +7,8 @@
 - ✅ NativePHP desktop application packaging
 - ✅ SQLite database setup for both web and NativePHP contexts (with proper session handling)
 - ✅ Laravel Boost integration for AI capabilities (_accessible via MCP_)
-- ✅ Strict code quality tooling (PHPStan level 9, Laravel Pint)
+- ✅ Strict code quality tooling (PHPStan level 5, Laravel Pint, Rector)
+- ✅ Pest testing framework integration
 - ✅ Development environment setup scripts
 - ✅ Basic routing and test endpoints
 - ✅ Laravel Herd integration for web development

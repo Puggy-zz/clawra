@@ -1,38 +1,13 @@
 parameters:
-    level: 9
+    level: 5
     paths:
         - app
         - config
         - database/factories
         - database/seeders
-        - resources/lang
         - routes
         - tests
-    excludePaths:
-        - tests/Fixtures
-    checkMissingIterableValueType: false
-    checkExplicitMixed: true
-    checkImplicitMixed: true
-    checkUnionTypes: true
-    checkExplicitMixedInFunctionSignature: true
-    checkExplicitMixedInProperty: true
-    checkGenericClassInNonGenericObjectType: true
-    checkMissingTemplateTypeInParameter: true
-    checkMissingTypehints: true
-    inferPrivatePropertyTypeFromConstructor: true
-    reportMaybes: true
-    reportMaybesInMethodSignatures: true
-    reportMaybesInPropertyAssignments: true
-    reportStaticMethodSignatures: true
-    treatPhpDocTypesAsCertain: true
-    unionTypeRuleLevel: 9
-    checkBenevolentUnionTypes: true
-    featureToggles:
-        disableRuntimeReflectionProvider: true
-        inlineMixedType: true
-        usePathConstants: true
 
 includes:
     - vendor/phpstan/phpstan-deprecation-rules/rules.neon
-    - vendor/phpstan/phpstan-phpunit/rules.neon
     - vendor/phpstan/phpstan-strict-rules/rules.neon

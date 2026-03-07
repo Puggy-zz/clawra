@@ -1,15 +1,22 @@
 # Clawra - Personal AI Orchestration System
 
+[![GitHub](https://img.shields.io/github/license/Puggy-zz/clawra)](https://github.com/Puggy-zz/clawra)
+[![Laravel](https://img.shields.io/badge/Laravel-12.x-red)](https://laravel.com)
+[![PHP](https://img.shields.io/badge/PHP-8.2+-blue)](https://php.net)
+
 ## Overview
 Clawra is a personal AI orchestration system built with Laravel + NativePHP for Windows. It accepts voice/text requests, decomposes them into tasks, and delegates to specialized agents.
+
+## Repository
+- **GitHub**: [https://github.com/Puggy-zz/clawra](https://github.com/Puggy-zz/clawra)
 
 ## Technology Stack
 - **Backend**: Laravel 12.x with Livewire/Filament
 - **Frontend**: Livewire with Filament admin panel
 - **AI Orchestration**: NativePHP for desktop packaging, Laravel Boost for AI capabilities
 - **Database**: SQLite
-- **Code Quality**: PHPStan (level 9), Laravel Pint for formatting
-- **Testing**: PHPUnit with strict type checking
+- **Code Quality**: PHPStan (level 5), Laravel Pint for formatting, Rector for code improvements
+- **Testing**: Pest testing framework with strict type checking
 
 ## Setup Instructions
 
@@ -42,12 +49,17 @@ Clawra is a personal AI orchestration system built with Laravel + NativePHP for 
    - Linting: `composer lint` (uses Pint)
    - Type checking: `composer test:types` (uses PHPStan)
    - Test linting: `composer test:lint`
+   - Rector improvements: `composer test:rector` (dry-run) or `rector process` (apply changes)
+
+6. **Testing**:
+   - Run tests: `php artisan test`
+   - Run tests with coverage: `php artisan test --coverage`
 
 ## Project Structure
 - `app/` - Core application logic
 - `resources/views/` - Blade templates
 - `routes/` - Route definitions
-- `tests/` - PHPUnit tests
+- `tests/` - Pest tests
 - `config/` - Configuration files
 
 ## Quality Assurance

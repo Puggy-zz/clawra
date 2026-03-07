@@ -1,14 +1,24 @@
 # Clawra Setup Instructions
 
+## Repository
+- **GitHub**: [https://github.com/Puggy-zz/clawra](https://github.com/Puggy-zz/clawra)
+
 ## Prerequisites
 - PHP 8.2 or higher
 - Composer
 - Node.js and npm
 - SQLite extension for PHP
+- Git
 
 ## Initial Setup
 
-1. **Clone and Install Dependencies**:
+1. **Clone Repository**:
+   ```bash
+   git clone https://github.com/Puggy-zz/clawra.git
+   cd clawra
+   ```
+
+2. **Install Dependencies**:
    ```bash
    composer install
    npm install

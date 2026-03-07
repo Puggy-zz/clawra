@@ -1,18 +1,15 @@
 #!/usr/bin/env php
 <?php
 
-require_once __DIR__.'/vendor/autoload.php';
+declare(strict_types=1);
 
-use Illuminate\Console\Application;
-use Symfony\Component\Console\Input\ArgvInput;
-use Symfony\Component\Console\Output\ConsoleOutput;
+require_once __DIR__.'/vendor/autoload.php';
 
 /**
  * Clawra Setup Verification Script
- * 
+ *
  * This script verifies that the basic Clawra setup is working correctly.
  */
-
 echo "🔍 Clawra Setup Verification\n";
 echo "============================\n\n";
 
@@ -52,7 +49,7 @@ if (file_exists(__DIR__.'/vendor/autoload.php')) {
 echo "\nEnvironment Configuration Check:\n";
 if (file_exists(__DIR__.'/.env')) {
     echo "  ✅ .env file exists\n";
-    
+
     // Check if key is generated
     $envContent = file_get_contents(__DIR__.'/.env');
     if (strpos($envContent, 'APP_KEY=') !== false && strpos($envContent, 'APP_KEY=base64:') !== false) {
@@ -86,18 +83,18 @@ $requiredPackages = [
     'livewire/livewire',
     'filament/filament',
     'nativephp/electron',
-    'laravel/boost'
+    'laravel/boost',
 ];
 
 // Read composer.lock to check installed packages
 if (file_exists(__DIR__.'/composer.lock')) {
     $composerLock = json_decode(file_get_contents(__DIR__.'/composer.lock'), true);
     $installedPackages = [];
-    
+
     foreach ($composerLock['packages'] as $package) {
         $installedPackages[$package['name']] = $package['version'];
     }
-    
+
     $missingPackages = [];
     foreach ($requiredPackages as $package) {
         if (isset($installedPackages[$package])) {
@@ -106,8 +103,8 @@ if (file_exists(__DIR__.'/composer.lock')) {
             $missingPackages[] = $package;
         }
     }
-    
-    if (!empty($missingPackages)) {
+
+    if (! empty($missingPackages)) {
         echo "  ⚠️  Some packages not found in composer.lock:\n";
         foreach ($missingPackages as $package) {
             echo "    - $package\n";

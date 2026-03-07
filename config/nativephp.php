@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 return [
     /**
      * The version of your app.
@@ -124,7 +126,7 @@ return [
                 'region' => env('AWS_DEFAULT_REGION'),
                 'bucket' => env('AWS_BUCKET'),
                 'endpoint' => env('AWS_ENDPOINT'),
-                'path' => env('NATIVEPHP_UPDATER_PATH', null),
+                'path' => env('NATIVEPHP_UPDATER_PATH'),
             ],
 
             'spaces' => [
@@ -133,7 +135,7 @@ return [
                 'secret' => env('DO_SPACES_SECRET_ACCESS_KEY'),
                 'name' => env('DO_SPACES_NAME'),
                 'region' => env('DO_SPACES_REGION'),
-                'path' => env('NATIVEPHP_UPDATER_PATH', null),
+                'path' => env('NATIVEPHP_UPDATER_PATH'),
             ],
         ],
     ],
@@ -164,5 +166,5 @@ return [
     /**
      * Custom PHP binary path.
      */
-    'binary_path' => env('NATIVEPHP_PHP_BINARY_PATH', null),
+    'binary_path' => env('NATIVEPHP_PHP_BINARY_PATH'),
 ];
