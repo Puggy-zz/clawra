@@ -6,6 +6,8 @@ use App\Models\Agent;
 use App\Models\HeartbeatLog;
 use App\Models\Project;
 use App\Models\Provider;
+use App\Models\ProviderModel;
+use App\Models\ProviderRoute;
 use App\Models\Task;
 use App\Models\Workflow;
 use App\Services\HeartbeatScheduler;
@@ -26,6 +28,24 @@ it('queues eligible pending tasks and logs the heartbeat', function () {
         'capability_tags' => ['planning', 'chat'],
         'priority_preferences' => ['planning' => 1, 'default' => 5],
         'usage_snapshot' => ['requests_remaining' => 10, 'reset_at' => now()->addHours(5)->toISOString()],
+        'status' => 'active',
+    ]);
+
+    $route = ProviderRoute::factory()->create([
+        'provider_id' => Provider::query()->where('name', 'synthetic')->value('id'),
+        'name' => 'synthetic-chat',
+        'harness' => 'laravel_ai',
+        'capability_tags' => ['planning', 'chat'],
+        'usage_snapshot' => ['requests_remaining' => 10, 'reset_at' => now()->addHours(5)->toISOString()],
+        'status' => 'active',
+    ]);
+
+    ProviderModel::factory()->create([
+        'provider_route_id' => $route->id,
+        'name' => 'deepseek-v3',
+        'external_name' => 'deepseek-v3',
+        'capabilities' => ['planning', 'chat'],
+        'is_default' => true,
         'status' => 'active',
     ]);
 

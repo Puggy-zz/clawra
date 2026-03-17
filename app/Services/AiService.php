@@ -122,6 +122,28 @@ class AiService
             ];
         }
 
+        if (in_array($model, ['synthetic', 'deepseek-v3', 'kimi-k2-instruct', 'glm-4.7'], true)) {
+            $route = $this->providerRegistry->getProviderRouteForHarness('synthetic', 'laravel_ai');
+
+            return [
+                'provider' => $route?->provider?->name ?? 'synthetic',
+                'model' => $model === 'synthetic' ? null : $model,
+                'capability' => 'chat',
+                'route' => $route,
+            ];
+        }
+
+        if (in_array($model, ['gemini', 'gemini-2.5-pro', 'claude-3-haiku', 'gpt-4'], true)) {
+            $route = $this->providerRegistry->getProviderRouteForHarness('gemini', 'laravel_ai');
+
+            return [
+                'provider' => $route?->provider?->name ?? 'gemini',
+                'model' => $model === 'gemini' ? null : 'gemini-2.5-pro',
+                'capability' => 'chat',
+                'route' => $route,
+            ];
+        }
+
         $route = $this->providerRegistry->getRouteByName($model);
 
         if ($route instanceof ProviderRoute) {
@@ -162,10 +184,7 @@ class AiService
         }
 
         return match ($model) {
-            'synthetic', 'deepseek-v3' => $this->resolveProviderAndModel('deepseek-v3'),
-            'kimi-k2-instruct' => $this->resolveProviderAndModel('kimi-k2-instruct'),
             'claude-3-5-sonnet' => $this->resolveProviderAndModel('glm-4.7'),
-            'gemini', 'claude-3-haiku', 'gpt-4' => $this->resolveProviderAndModel('gemini-2.5-pro'),
             default => [
                 'provider' => 'synthetic',
                 'model' => $model,

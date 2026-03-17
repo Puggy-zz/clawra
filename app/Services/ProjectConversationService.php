@@ -158,6 +158,7 @@ class ProjectConversationService
         return DB::table('agent_conversation_messages')
             ->where('conversation_id', $conversation->laravel_ai_conversation_id)
             ->orderBy('created_at')
+            ->orderByRaw("CASE WHEN role = 'user' THEN 0 ELSE 1 END")
             ->orderBy('id')
             ->limit($limit)
             ->get()
