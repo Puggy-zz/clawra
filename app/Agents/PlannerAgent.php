@@ -4,91 +4,100 @@ declare(strict_types=1);
 
 namespace App\Agents;
 
+use App\Services\AgentService;
+use App\Services\AiService;
+
 class PlannerAgent
 {
-    /**
-     * Primary model for the planner.
-     */
-    protected string $primaryModel = 'kimi-k2-instruct';
+    protected string $primaryModel = 'synthetic';
 
-    /**
-     * Fallback model for the planner.
-     */
-    protected string $fallbackModel = 'deepseek-v3';
+    protected string $fallbackModel = 'gemini';
 
-    /**
-     * Create a project plan from requirements.
-     */
+    public function __construct(protected AiService $aiService, protected ?AgentService $agentService = null) {}
+
     public function createPlan(string $requirements): array
     {
-        // Check if AI facade is available
-        if (!class_exists('\Laravel\Ai\Ai') && !class_exists('\Laravel\AI\Facades\AI')) {
-            return [
-                'raw_plan' => 'Placeholder plan for: ' . $requirements,
-                'parsed_at' => now()->toISOString(),
-            ];
+        $prompt = "Create a concise implementation plan for the following request. Return sections for summary, goals, milestones, and next actions.\n\n{$requirements}";
+        ['model' => $primaryModel, 'fallback_model' => $fallbackModel] = $this->resolveModels();
+        $response = $this->aiService->promptWithFallback($prompt, $primaryModel, $fallbackModel ?? $this->fallbackModel);
+
+        if ($response['success']) {
+            return $this->parsePlan($response['text']);
         }
 
-        $prompt = "Create a detailed project plan based on the following requirements:\n\n{$requirements}\n\nReturn a structured plan with phases, tasks, and estimated effort.";
-        
-        try {
-            if (class_exists('\Laravel\AI\Facades\AI')) {
-                $response = \Laravel\AI\Facades\AI::using($this->primaryModel)->prompt($prompt);
-                return $this->parsePlan($response->text());
-            } else {
-                return $this->parsePlan('Placeholder plan for: ' . $requirements);
-            }
-        } catch (\Exception $e) {
-            try {
-                if (class_exists('\Laravel\AI\Facades\AI')) {
-                    $response = \Laravel\AI\Facades\AI::using($this->fallbackModel)->prompt($prompt);
-                    return $this->parsePlan($response->text());
-                } else {
-                    return $this->parsePlan('Placeholder plan for: ' . $requirements);
-                }
-            } catch (\Exception $fallbackException) {
-                return [
-                    'error' => 'Failed to create plan',
-                    'message' => $fallbackException->getMessage()
-                ];
-            }
-        }
+        return $this->fallbackPlan($requirements, $response['error'] ?? null);
     }
 
-    /**
-     * Parse the plan response into a structured format.
-     */
+    public function breakdownFeature(string $feature): array
+    {
+        $plan = $this->createPlan($feature);
+
+        return $plan['next_actions'];
+    }
+
     protected function parsePlan(string $planText): array
     {
-        // This is a simplified parser - in a real implementation, 
-        // you would want more sophisticated parsing
+        $lines = collect(preg_split('/\r\n|\r|\n/', trim($planText)) ?: [])
+            ->map(fn (string $line): string => trim($line))
+            ->filter()
+            ->values();
+
+        $actions = $lines
+            ->filter(fn (string $line): bool => str_starts_with($line, '-') || str_starts_with($line, '*') || preg_match('/^\d+[\).]/', $line) === 1)
+            ->map(fn (string $line): array => ['title' => ltrim($line, "-*0123456789.) \t"), 'status' => 'pending'])
+            ->values()
+            ->all();
+
         return [
+            'summary' => $lines->first() ?? 'Plan created.',
+            'goals' => $lines->take(3)->values()->all(),
+            'milestones' => $lines->take(5)->values()->all(),
+            'next_actions' => $actions !== [] ? $actions : [
+                ['title' => 'Review requirements and refine scope', 'status' => 'pending'],
+                ['title' => 'Create the first implementation task', 'status' => 'pending'],
+            ],
             'raw_plan' => $planText,
             'parsed_at' => now()->toISOString(),
         ];
     }
 
-    /**
-     * Break down a feature into implementation tasks.
-     */
-    public function breakdownFeature(string $feature): array
+    protected function fallbackPlan(string $requirements, ?string $error = null): array
     {
-        // Check if AI facade is available
-        if (!class_exists('\Laravel\Ai\Ai') && !class_exists('\Laravel\AI\Facades\AI')) {
-            return [['task' => 'Placeholder task for: ' . $feature]];
+        return [
+            'summary' => 'Create a Phase 0 execution plan for the requested work.',
+            'goals' => [$requirements],
+            'milestones' => [
+                'Clarify scope and data model impact',
+                'Implement services and orchestration flow',
+                'Validate with tests and a heartbeat pass',
+            ],
+            'next_actions' => [
+                ['title' => 'Capture the request as a tracked task', 'status' => 'pending'],
+                ['title' => 'Break the request into implementation milestones', 'status' => 'pending'],
+                ['title' => 'Run targeted validation after implementation', 'status' => 'pending'],
+            ],
+            'raw_plan' => $error ? 'Planner fallback used: '.$error : 'Planner fallback used.',
+            'parsed_at' => now()->toISOString(),
+        ];
+    }
+
+    /**
+     * @return array{model: string, fallback_model: ?string}
+     */
+    protected function resolveModels(): array
+    {
+        if (! $this->agentService instanceof AgentService) {
+            return [
+                'model' => $this->primaryModel,
+                'fallback_model' => $this->fallbackModel,
+            ];
         }
 
-        $prompt = "Break down the following feature into specific implementation tasks:\n\n{$feature}\n\nReturn a JSON array of tasks with descriptions and estimated effort.";
-        
-        try {
-            if (class_exists('\Laravel\AI\Facades\AI')) {
-                $response = \Laravel\AI\Facades\AI::using($this->primaryModel)->prompt($prompt);
-                return json_decode($response->text(), true) ?: [];
-            } else {
-                return [['task' => 'Placeholder task for: ' . $feature]];
-            }
-        } catch (\Exception $e) {
-            return [['task' => 'Placeholder task for: ' . $feature]];
-        }
+        $config = $this->agentService->getLaravelAiConfigForAgent('Planner', 'synthetic', 'gemini', $this->primaryModel, $this->fallbackModel);
+
+        return [
+            'model' => $config['model'] ?? $this->primaryModel,
+            'fallback_model' => $config['fallback_model'] ?? $this->fallbackModel,
+        ];
     }
 }

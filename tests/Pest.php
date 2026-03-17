@@ -44,7 +44,5 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something(): void
-{
-    // ..
-}
+// Include helper functions
+require_once __DIR__.'/Helpers/MockHelper.php';

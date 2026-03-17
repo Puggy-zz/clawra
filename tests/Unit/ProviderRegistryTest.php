@@ -2,91 +2,137 @@
 
 declare(strict_types=1);
 
-use App\Services\ProviderRegistry;
 use App\Models\Provider;
+use App\Models\ProviderRoute;
+use App\Services\ProviderRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
-uses(Tests\TestCase::class);
-uses(RefreshDatabase::class);
+uses(Tests\TestCase::class, RefreshDatabase::class);
 
-// Test that the provider registry can be instantiated
 it('can be instantiated', function () {
-    $registry = new ProviderRegistry();
-    expect($registry)->toBeInstanceOf(ProviderRegistry::class);
+    expect(new ProviderRegistry)->toBeInstanceOf(ProviderRegistry::class);
 });
 
-// Test that the provider registry can get active providers
-it('can get active providers', function () {
-    // Create some test providers
-    Provider::factory()->count(3)->create(['status' => 'active']);
-    Provider::factory()->count(2)->create(['status' => 'inactive']);
-    
-    $registry = new ProviderRegistry();
-    $providers = $registry->getActiveProviders();
-    
-    expect($providers)->toHaveCount(3);
-    foreach ($providers as $provider) {
-        expect($provider->status)->toBe('active');
-    }
+it('selects the best laravel ai route for a capability', function () {
+    $synthetic = Provider::factory()->create([
+        'name' => 'synthetic',
+        'priority_preferences' => ['planning' => 1, 'default' => 5],
+        'capability_tags' => ['planning'],
+        'status' => 'active',
+    ]);
+
+    $gemini = Provider::factory()->create([
+        'name' => 'gemini',
+        'priority_preferences' => ['planning' => 3, 'default' => 10],
+        'capability_tags' => ['planning'],
+        'status' => 'active',
+    ]);
+
+    ProviderRoute::factory()->create([
+        'provider_id' => $synthetic->id,
+        'name' => 'synthetic-laravel-ai',
+        'harness' => 'laravel_ai',
+        'auth_mode' => 'api_key',
+        'capability_tags' => ['planning'],
+        'priority' => 10,
+        'usage_snapshot' => ['requests_remaining' => 20, 'reset_at' => now()->addHour()->toISOString()],
+        'status' => 'active',
+    ]);
+
+    ProviderRoute::factory()->create([
+        'provider_id' => $gemini->id,
+        'name' => 'gemini-laravel-ai',
+        'harness' => 'laravel_ai',
+        'auth_mode' => 'api_key',
+        'capability_tags' => ['planning'],
+        'priority' => 30,
+        'usage_snapshot' => ['requests_remaining' => 100, 'reset_at' => null],
+        'status' => 'active',
+    ]);
+
+    $registry = new ProviderRegistry;
+
+    expect($registry->getBestRouteForCapability('planning', harness: 'laravel_ai')?->name)->toBe('synthetic-laravel-ai');
 });
 
-// Test that the provider registry can get a provider by name
-it('can get a provider by name', function () {
-    $provider = Provider::factory()->create(['name' => 'test-provider']);
-    
-    $registry = new ProviderRegistry();
-    $foundProvider = $registry->getProvider('test-provider');
-    
-    expect($foundProvider)->not()->toBeNull();
-    expect($foundProvider->name)->toBe('test-provider');
+it('treats exhausted routes as rate limited until reset', function () {
+    $provider = Provider::factory()->create(['name' => 'synthetic', 'status' => 'active']);
+
+    ProviderRoute::factory()->create([
+        'provider_id' => $provider->id,
+        'name' => 'synthetic-laravel-ai',
+        'harness' => 'laravel_ai',
+        'auth_mode' => 'api_key',
+        'capability_tags' => ['chat'],
+        'usage_snapshot' => ['requests_remaining' => 0, 'reset_at' => now()->addHours(2)->toISOString()],
+        'status' => 'active',
+    ]);
+
+    $registry = new ProviderRegistry;
+
+    expect($registry->isProviderRateLimited('synthetic'))->toBeTrue()
+        ->and($registry->canUseProvider('synthetic'))->toBeFalse();
 });
 
-// Test that the provider registry returns null for non-existent providers
-it('returns null for non-existent providers', function () {
-    $registry = new ProviderRegistry();
-    $provider = $registry->getProvider('non-existent-provider');
-    
-    expect($provider)->toBeNull();
+it('records route usage and decrements remaining requests', function () {
+    $provider = Provider::factory()->create(['name' => 'synthetic', 'status' => 'active']);
+
+    $route = ProviderRoute::factory()->create([
+        'provider_id' => $provider->id,
+        'name' => 'synthetic-laravel-ai',
+        'harness' => 'laravel_ai',
+        'auth_mode' => 'api_key',
+        'capability_tags' => ['chat'],
+        'rate_limits' => ['requests_per_window' => 5, 'window_hours' => 5],
+        'usage_snapshot' => ['requests_used' => 1, 'requests_remaining' => 4, 'reset_at' => now()->addHours(5)->toISOString()],
+        'status' => 'active',
+    ]);
+
+    $registry = new ProviderRegistry;
+
+    expect($registry->recordRouteUsage($route, 'hf:deepseek-ai/DeepSeek-V3'))->toBeTrue();
+
+    $freshRoute = ProviderRoute::query()->where('name', 'synthetic-laravel-ai')->firstOrFail();
+
+    expect($freshRoute->usage_snapshot['requests_used'])->toBe(2)
+        ->and($freshRoute->usage_snapshot['requests_remaining'])->toBe(3)
+        ->and($freshRoute->usage_snapshot['current_model'])->toBe('hf:deepseek-ai/DeepSeek-V3');
 });
 
-// Test that the provider registry can update usage snapshots
-it('can update usage snapshots', function () {
-    $provider = Provider::factory()->create(['name' => 'test-provider']);
-    
-    $registry = new ProviderRegistry();
-    $usageData = ['requests_used' => 10, 'requests_remaining' => 90];
-    
-    $result = $registry->updateUsageSnapshot('test-provider', $usageData);
-    
-    expect($result)->toBeTrue();
-    
-    $updatedProvider = $registry->getProvider('test-provider');
-    expect($updatedProvider->usage_snapshot)->toBe($usageData);
-});
+it('returns a fallback provider name for a capability on the same harness', function () {
+    $synthetic = Provider::factory()->create([
+        'name' => 'synthetic',
+        'priority_preferences' => ['chat' => 1],
+        'status' => 'active',
+    ]);
 
-// Test that the provider registry can update rate limits
-it('can update rate limits', function () {
-    $provider = Provider::factory()->create(['name' => 'test-provider']);
-    
-    $registry = new ProviderRegistry();
-    $rateLimits = ['requests_per_window' => 100, 'window_minutes' => 300];
-    
-    $result = $registry->updateRateLimits('test-provider', $rateLimits);
-    
-    expect($result)->toBeTrue();
-    
-    $updatedProvider = $registry->getProvider('test-provider');
-    expect($updatedProvider->rate_limits)->toBe($rateLimits);
-});
+    $gemini = Provider::factory()->create([
+        'name' => 'gemini',
+        'priority_preferences' => ['chat' => 2],
+        'status' => 'active',
+    ]);
 
-// Test that the provider registry can check if a provider is rate limited
-it('can check if a provider is rate limited', function () {
-    Provider::factory()->create(['name' => 'rate-limited-provider', 'status' => 'rate-limited']);
-    Provider::factory()->create(['name' => 'active-provider', 'status' => 'active']);
-    
-    $registry = new ProviderRegistry();
-    
-    expect($registry->isProviderRateLimited('rate-limited-provider'))->toBeTrue();
-    expect($registry->isProviderRateLimited('active-provider'))->toBeFalse();
-    expect($registry->isProviderRateLimited('non-existent-provider'))->toBeTrue();
+    ProviderRoute::factory()->create([
+        'provider_id' => $synthetic->id,
+        'name' => 'synthetic-laravel-ai',
+        'harness' => 'laravel_ai',
+        'auth_mode' => 'api_key',
+        'capability_tags' => ['chat'],
+        'usage_snapshot' => ['requests_remaining' => 0, 'reset_at' => now()->addHours(5)->toISOString()],
+        'status' => 'rate-limited',
+    ]);
+
+    ProviderRoute::factory()->create([
+        'provider_id' => $gemini->id,
+        'name' => 'gemini-laravel-ai',
+        'harness' => 'laravel_ai',
+        'auth_mode' => 'api_key',
+        'capability_tags' => ['chat', 'fallback'],
+        'usage_snapshot' => ['requests_remaining' => 1000, 'reset_at' => null],
+        'status' => 'active',
+    ]);
+
+    $registry = new ProviderRegistry;
+
+    expect($registry->getFallbackProviderName('synthetic', 'chat', 'laravel_ai'))->toBe('gemini');
 });

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Database\Factories;
 
-use Illuminate\Database\Eloquent\Factories\Factory;
 use App\Models\Provider;
+use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
  * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Provider>
@@ -28,12 +28,14 @@ class ProviderFactory extends Factory
     {
         return [
             'name' => 'Test Provider',
-            'type' => $this->faker->randomElement(['API-key-based', 'CLI-tool-based']),
+            'vendor' => $this->faker->company(),
+            'type' => $this->faker->randomElement(['subscription', 'hybrid', 'api-only']),
             'api_protocol' => $this->faker->randomElement(['OpenAI-compatible', 'Anthropic-compatible', 'native']),
             'usage_snapshot' => null,
             'rate_limits' => null,
             'capability_tags' => null,
             'priority_preferences' => null,
+            'config' => [],
             'status' => $this->faker->randomElement(['active', 'rate-limited', 'degraded', 'disabled']),
         ];
     }

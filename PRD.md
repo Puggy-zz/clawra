@@ -1,6 +1,5 @@
 # PRD: Clawra — Personal AI Orchestration System
 **Codename:** Clawra  
-**Author:** (you)  
 **Status:** Draft v0.4  
 **Last Updated:** 2026-03-06
 

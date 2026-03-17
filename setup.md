@@ -57,6 +57,12 @@ php artisan native:serve
 php artisan serve --port=8080
 ```
 
+### File Tree Automation:
+To manually refresh the AI file tree and related guidelines:
+```bash
+php artisan clawra:update-file-tree
+```
+
 ## Code Quality Tools
 
 - **Linting**: `composer lint` (uses Laravel Pint)

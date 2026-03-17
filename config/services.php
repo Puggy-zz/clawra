@@ -37,4 +37,14 @@ return [
         ],
     ],
 
+    'opencode' => [
+        'binary' => env('OPENCODE_BINARY', 'opencode'),
+        'timeout' => (int) env('OPENCODE_TIMEOUT', 120),
+    ],
+
+    'clawra' => [
+        'agent_timeout' => (int) env('CLAWRA_AGENT_TIMEOUT', 12),
+        'search_timeout' => (int) env('CLAWRA_SEARCH_TIMEOUT', 8),
+    ],
+
 ];

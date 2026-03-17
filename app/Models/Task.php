@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -20,10 +20,12 @@ class Task extends Model
      */
     protected $fillable = [
         'project_id',
+        'project_conversation_id',
         'name',
         'description',
         'status',
         'workflow_id',
+        'recommended_agent_id',
         'current_subtask_id',
     ];
 
@@ -41,6 +43,16 @@ class Task extends Model
     public function workflow(): BelongsTo
     {
         return $this->belongsTo(Workflow::class);
+    }
+
+    public function conversation(): BelongsTo
+    {
+        return $this->belongsTo(ProjectConversation::class, 'project_conversation_id');
+    }
+
+    public function recommendedAgent(): BelongsTo
+    {
+        return $this->belongsTo(Agent::class, 'recommended_agent_id');
     }
 
     /**

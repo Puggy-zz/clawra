@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Agent extends Model
 {
@@ -21,9 +22,11 @@ class Agent extends Model
         'name',
         'role',
         'description',
+        'status',
         'model',
         'fallback_model',
         'tools',
+        'execution_preferences',
     ];
 
     /**
@@ -35,7 +38,18 @@ class Agent extends Model
     {
         return [
             'tools' => 'array',
+            'execution_preferences' => 'array',
         ];
+    }
+
+    public function runtimes(): HasMany
+    {
+        return $this->hasMany(AgentRuntime::class);
+    }
+
+    public function defaultRuntime(): HasOne
+    {
+        return $this->hasOne(AgentRuntime::class)->where('is_default', true);
     }
 
     /**

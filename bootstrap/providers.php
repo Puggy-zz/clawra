@@ -1,7 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 return [
-    App\Providers\AiServiceProvider::class,
+    // App\Providers\NativeAppServiceProvider::class,
     App\Providers\AppServiceProvider::class,
-    App\Providers\Filament\AdminPanelProvider::class,
+    App\Providers\AiServiceProvider::class,
+    Laravel\Ai\AiServiceProvider::class,
+    App\Providers\SyntheticAiServiceProvider::class,
 ];

@@ -20,7 +20,7 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->string('status')->default('pending'); // pending, in-progress, completed, failed
             $table->foreignId('workflow_id')->constrained()->onDelete('cascade');
-            $table->foreignId('current_subtask_id')->nullable()->constrained('subtasks')->onDelete('set null');
+            $table->unsignedBigInteger('current_subtask_id')->nullable();
             $table->timestamps();
         });
     }

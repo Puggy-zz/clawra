@@ -77,3 +77,9 @@ Laravel Boost provides AI capabilities for the application, including:
 - AI-powered task decomposition
 - Natural language processing
 - Machine learning integrations
+
+## File Tree Automation
+You can manually update the AI file tree and refresh the related guidelines with:
+```bash
+php artisan clawra:update-file-tree
+```

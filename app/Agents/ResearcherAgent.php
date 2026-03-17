@@ -4,101 +4,74 @@ declare(strict_types=1);
 
 namespace App\Agents;
 
+use App\Services\AgentService;
+use App\Services\AiService;
+use App\Services\SyntheticSearchService;
+
 class ResearcherAgent
 {
-    /**
-     * Primary model for the researcher (synthetic.new search endpoint).
-     */
-    protected string $searchModel = 'synthetic.new/search';
+    protected string $summaryModel = 'synthetic';
 
-    /**
-     * Conduct research on a topic.
-     */
+    protected string $fallbackModel = 'gemini';
+
+    public function __construct(
+        protected AiService $aiService,
+        protected SyntheticSearchService $syntheticSearchService,
+        protected ?AgentService $agentService = null,
+    ) {}
+
     public function conductResearch(string $query): array
     {
-        // Check if AI facade is available
-        if (!class_exists('\Laravel\Ai\Ai') && !class_exists('\Laravel\AI\Facades\AI')) {
-            return [
-                'query' => $query,
-                'results' => 'Placeholder research results for: ' . $query,
-                'timestamp' => now()->toISOString(),
-            ];
-        }
+        $results = $this->syntheticSearchService->search($query);
+        $formattedResults = $this->syntheticSearchService->formatResults($results);
+        $summary = $this->summarizeFindings($formattedResults);
 
-        $prompt = "Research the following topic and provide a comprehensive summary:\n\n{$query}";
-        
-        try {
-            // Use the search endpoint for research
-            if (class_exists('\Laravel\AI\Facades\AI')) {
-                $response = \Laravel\AI\Facades\AI::using($this->searchModel)->prompt($prompt);
-                
-                return [
-                    'query' => $query,
-                    'results' => $response->text(),
-                    'timestamp' => now()->toISOString(),
-                ];
-            } else {
-                return [
-                    'query' => $query,
-                    'results' => 'Placeholder research results for: ' . $query,
-                    'timestamp' => now()->toISOString(),
-                ];
-            }
-        } catch (\Exception $e) {
-            return [
-                'query' => $query,
-                'error' => 'Research failed',
-                'message' => $e->getMessage(),
-                'timestamp' => now()->toISOString(),
-            ];
-        }
+        return [
+            'query' => $query,
+            'results' => $this->syntheticSearchService->compactResults($results),
+            'summary' => $summary,
+            'sources' => collect($results)->pluck('url')->filter()->take(5)->values()->all(),
+            'timestamp' => now()->toISOString(),
+        ];
     }
 
-    /**
-     * Summarize research findings.
-     */
     public function summarizeFindings(string $content): string
     {
-        // Check if AI facade is available
-        if (!class_exists('\Laravel\Ai\Ai') && !class_exists('\Laravel\AI\Facades\AI')) {
-            return 'Placeholder summary for: ' . substr($content, 0, 50) . '...';
-        }
+        $prompt = "Summarize the following research content in no more than three short bullets and one closing sentence. Focus on the most relevant findings only.\n\n{$content}";
+        ['model' => $summaryModel, 'fallback_model' => $fallbackModel] = $this->resolveModels();
+        $response = $this->aiService->promptWithFallback($prompt, $summaryModel, $fallbackModel ?? $this->fallbackModel);
 
-        $prompt = "Summarize the following research content in a concise, structured format:\n\n{$content}";
-        
-        try {
-            if (class_exists('\Laravel\AI\Facades\AI')) {
-                $response = \Laravel\AI\Facades\AI::using($this->searchModel)->prompt($prompt);
-                return $response->text();
-            } else {
-                return 'Placeholder summary for: ' . substr($content, 0, 50) . '...';
-            }
-        } catch (\Exception $e) {
-            return "Failed to summarize findings: " . $e->getMessage();
-        }
+        return $response['success']
+            ? str($response['text'])->squish()->limit(600)->value()
+            : 'Research captured. Open the task for source links and next steps.';
+    }
+
+    public function extractFacts(string $content): array
+    {
+        $prompt = "Extract key facts from the following content. Return as a JSON array:\n\n{$content}";
+        ['model' => $summaryModel, 'fallback_model' => $fallbackModel] = $this->resolveModels();
+        $response = $this->aiService->promptWithFallback($prompt, $summaryModel, $fallbackModel ?? $this->fallbackModel);
+
+        return $response['success'] ? (json_decode($response['text'], true) ?: []) : [];
     }
 
     /**
-     * Extract facts from research content.
+     * @return array{model: string, fallback_model: ?string}
      */
-    public function extractFacts(string $content): array
+    protected function resolveModels(): array
     {
-        // Check if AI facade is available
-        if (!class_exists('\Laravel\Ai\Ai') && !class_exists('\Laravel\AI\Facades\AI')) {
-            return [['fact' => 'Placeholder fact from content']];
+        if (! $this->agentService instanceof AgentService) {
+            return [
+                'model' => $this->summaryModel,
+                'fallback_model' => $this->fallbackModel,
+            ];
         }
 
-        $prompt = "Extract key facts from the following content. Return as a JSON array:\n\n{$content}";
-        
-        try {
-            if (class_exists('\Laravel\AI\Facades\AI')) {
-                $response = \Laravel\AI\Facades\AI::using($this->searchModel)->prompt($prompt);
-                return json_decode($response->text(), true) ?: [];
-            } else {
-                return [['fact' => 'Placeholder fact from content']];
-            }
-        } catch (\Exception $e) {
-            return [];
-        }
+        $config = $this->agentService->getLaravelAiConfigForAgent('Researcher', 'synthetic', 'gemini', $this->summaryModel, $this->fallbackModel);
+
+        return [
+            'model' => $config['model'] ?? $this->summaryModel,
+            'fallback_model' => $config['fallback_model'] ?? $this->fallbackModel,
+        ];
     }
 }

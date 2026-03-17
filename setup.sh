@@ -34,3 +34,4 @@ echo "Running NativePHP migrations..."
 echo "yes" | php artisan native:migrate
 
 echo "Setup complete! You can now start the development server with: php artisan serve --port=8080"
+echo "To refresh the AI file tree manually, run: php artisan clawra:update-file-tree"

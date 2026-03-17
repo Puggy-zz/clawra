@@ -1,0 +1,1 @@
+Our app is designed to run as a Windows native app but is available during development as a web app too. We are serving it through Laravel Herd and it's available at http://clawra.test NEVER attempt to run the server yourself.

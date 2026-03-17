@@ -2,36 +2,54 @@
 
 declare(strict_types=1);
 
+use App\Models\Agent;
+use App\Models\HeartbeatLog;
+use App\Models\Project;
+use App\Models\Provider;
+use App\Models\Task;
+use App\Models\Workflow;
 use App\Services\HeartbeatScheduler;
 use App\Services\ProviderRegistry;
-use App\Models\HeartbeatLog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
-uses(Tests\TestCase::class);
-uses(RefreshDatabase::class);
+uses(Tests\TestCase::class, RefreshDatabase::class);
 
-// Test that the heartbeat scheduler can be instantiated
 it('can be instantiated', function () {
-    $providerRegistry = mock(ProviderRegistry::class);
-    $scheduler = new HeartbeatScheduler($providerRegistry);
-    expect($scheduler)->toBeInstanceOf(HeartbeatScheduler::class);
+    expect(new HeartbeatScheduler(new ProviderRegistry))->toBeInstanceOf(HeartbeatScheduler::class);
 });
 
-// Test that the heartbeat scheduler can execute
-it('can execute', function () {
-    $providerRegistry = mock(ProviderRegistry::class);
-    $providerRegistry->shouldReceive('getActiveProviders')->andReturn(collect());
-    
-    $scheduler = new HeartbeatScheduler($providerRegistry);
-    
-    // This should not throw an exception
-    $scheduler->execute();
-    
-    // Check that a heartbeat log was created
-    expect(HeartbeatLog::count())->toBe(1);
-    
-    $log = HeartbeatLog::first();
-    expect($log->decisions)->toBeArray();
-    expect($log->tasks_queued)->toBeArray();
-    expect($log->provider_status)->toBeArray();
+it('queues eligible pending tasks and logs the heartbeat', function () {
+    Agent::factory()->create(['name' => 'Planner']);
+
+    Provider::factory()->create([
+        'name' => 'synthetic',
+        'capability_tags' => ['planning', 'chat'],
+        'priority_preferences' => ['planning' => 1, 'default' => 5],
+        'usage_snapshot' => ['requests_remaining' => 10, 'reset_at' => now()->addHours(5)->toISOString()],
+        'status' => 'active',
+    ]);
+
+    $project = Project::factory()->create(['current_intent' => 'Plan the next milestone']);
+    $workflow = Workflow::factory()->create([
+        'name' => 'Planning Workflow',
+        'steps' => [
+            ['name' => 'Plan', 'description' => 'Create a plan'],
+        ],
+    ]);
+
+    $task = Task::factory()->create([
+        'project_id' => $project->id,
+        'workflow_id' => $workflow->id,
+        'name' => 'Plan release workflow',
+        'status' => 'pending',
+    ]);
+
+    $scheduler = new HeartbeatScheduler(new ProviderRegistry);
+    $log = $scheduler->execute();
+
+    expect($log)->toBeInstanceOf(HeartbeatLog::class)
+        ->and(HeartbeatLog::query()->count())->toBe(1)
+        ->and($task->refresh()->status)->toBe('in-progress')
+        ->and($log->tasks_queued)->toHaveCount(1)
+        ->and($log->provider_status)->toHaveCount(1);
 });

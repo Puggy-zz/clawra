@@ -7,10 +7,13 @@
     "mcp": true,
     "nightwatch_mcp": false,
     "packages": [
-        "filament/filament"
+        "laravel/ai"
     ],
     "sail": false,
     "skills": [
-        "livewire-development"
+        "livewire-development",
+        "pest-testing",
+        "tailwindcss-development",
+        "ai-sdk-development"
     ]
 }
