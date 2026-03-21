@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Models\Agent;
 use App\Models\AgentRuntime;
 use App\Models\ExternalSession;
+use App\Models\Task;
 
 class RuntimeExecutionService
 {
@@ -20,7 +21,7 @@ class RuntimeExecutionService
     /**
      * @return array{success: bool, text: string, status: string, harness?: string, runtime?: string, error?: string}
      */
-    public function executeAgent(string $agentName, string $prompt): array
+    public function executeAgent(string $agentName, string $prompt, ?string $workspacePath = null, ?Task $task = null): array
     {
         $runtime = $this->agentService->getPreferredRuntimeForAgent($agentName);
         $agent = $this->agentService->getAgentByName($agentName);
@@ -32,6 +33,7 @@ class RuntimeExecutionService
                 message: sprintf('No active runtime configured for [%s].', $agentName),
                 context: ['prompt' => $prompt],
                 agent: $agent,
+                task: $task,
             );
 
             return [
@@ -42,13 +44,13 @@ class RuntimeExecutionService
             ];
         }
 
-        return $this->executeRuntime($runtime, $prompt, $agent);
+        return $this->executeRuntime($runtime, $prompt, $agent, $workspacePath, $task);
     }
 
     /**
      * @return array{success: bool, text: string, status: string, harness?: string, runtime?: string, error?: string}
      */
-    public function executeRuntime(AgentRuntime $runtime, string $prompt, ?Agent $agent = null): array
+    public function executeRuntime(AgentRuntime $runtime, string $prompt, ?Agent $agent = null, ?string $workspacePath = null, ?Task $task = null): array
     {
         $this->processLogService->log(
             kind: 'runtime.execution.started',
@@ -62,10 +64,11 @@ class RuntimeExecutionService
             ],
             agent: $agent,
             agentRuntime: $runtime,
+            task: $task,
         );
 
         $response = match ($runtime->harness) {
-            'opencode' => $this->openCodeRuntimeService->execute($runtime, $prompt),
+            'opencode' => $this->openCodeRuntimeService->execute($runtime, $prompt, $workspacePath),
             'laravel_ai' => $this->executeLaravelAiRuntime($runtime, $prompt),
             default => [
                 'success' => false,
@@ -78,7 +81,7 @@ class RuntimeExecutionService
         $response['harness'] = $runtime->harness;
         $response['runtime'] = $runtime->name;
 
-        $externalSession = $this->persistExternalSessionArtifacts($response, $runtime, $agent);
+        $externalSession = $this->persistExternalSessionArtifacts($response, $runtime, $agent, $task);
 
         if ($externalSession instanceof ExternalSession) {
             $response['external_session_id'] = $externalSession->id;
@@ -98,6 +101,7 @@ class RuntimeExecutionService
             agent: $agent,
             agentRuntime: $runtime,
             externalSession: $externalSession,
+            task: $task,
         );
 
         if (! $response['success'] && $runtime->fallbackRoute?->harness === 'opencode') {
@@ -113,6 +117,7 @@ class RuntimeExecutionService
                 agent: $agent,
                 agentRuntime: $runtime,
                 externalSession: $externalSession,
+                task: $task,
             );
 
             $fallbackRuntime = $runtime->replicate(['provider_route_id', 'provider_model_id']);
@@ -121,11 +126,11 @@ class RuntimeExecutionService
             $fallbackRuntime->setRelation('route', $runtime->fallbackRoute);
             $fallbackRuntime->setRelation('model', $runtime->fallbackModel);
 
-            $fallbackResponse = $this->openCodeRuntimeService->execute($fallbackRuntime, $prompt);
+            $fallbackResponse = $this->openCodeRuntimeService->execute($fallbackRuntime, $prompt, $workspacePath);
             $fallbackResponse['harness'] = $runtime->fallbackRoute->harness;
             $fallbackResponse['runtime'] = $runtime->name.'-fallback';
 
-            $fallbackSession = $this->persistExternalSessionArtifacts($fallbackResponse, $fallbackRuntime, $agent);
+            $fallbackSession = $this->persistExternalSessionArtifacts($fallbackResponse, $fallbackRuntime, $agent, $task);
 
             if ($fallbackSession instanceof ExternalSession) {
                 $fallbackResponse['external_session_id'] = $fallbackSession->id;
@@ -145,6 +150,7 @@ class RuntimeExecutionService
                 agent: $agent,
                 agentRuntime: $runtime,
                 externalSession: $fallbackSession,
+                task: $task,
             );
 
             return $fallbackResponse;
@@ -182,7 +188,7 @@ class RuntimeExecutionService
         ];
     }
 
-    protected function persistExternalSessionArtifacts(array $response, AgentRuntime $runtime, ?Agent $agent = null): ?ExternalSession
+    protected function persistExternalSessionArtifacts(array $response, AgentRuntime $runtime, ?Agent $agent = null, ?Task $task = null): ?ExternalSession
     {
         $sessionPayload = $response['external_session'] ?? null;
 
@@ -198,6 +204,7 @@ class RuntimeExecutionService
             agent: $agent,
             agentRuntime: $runtime,
             title: $sessionPayload['title'] ?? $runtime->name,
+            task: $task,
         );
 
         foreach ($response['external_events'] ?? [] as $event) {

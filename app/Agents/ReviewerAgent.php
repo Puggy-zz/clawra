@@ -95,6 +95,63 @@ class ReviewerAgent
     }
 
     /**
+     * Review whether an opencode agent actually completed the given task.
+     *
+     * @return array{decision: string, reasoning: string}
+     */
+    public function reviewTaskCompletion(string $taskName, string $taskDescription, string $agentOutput): array
+    {
+        ['model' => $primaryModel, 'fallback_model' => $fallbackModel] = $this->resolveModels();
+
+        $prompt = <<<EOT
+You are a task completion reviewer. Given the original task specification and the final output message from a coding agent, determine whether the task was successfully completed.
+
+## Task
+**Name:** {$taskName}
+**Description:** {$taskDescription}
+
+## Agent Output
+{$agentOutput}
+
+Base your decision solely on what the agent reports in its output. If the agent's message indicates it completed the task (e.g. "Done", "Saved", "Created", "Finished"), mark it as completed. Do not require external evidence or verification — trust the agent's reported outcome.
+
+Respond with a JSON object with exactly these fields:
+- "decision": one of "completed", "incomplete", or "failed"
+  - "completed": the agent's output indicates the task was done
+  - "incomplete": the agent made progress but explicitly says it did not finish
+  - "failed": the agent's output explicitly reports an error or failure
+- "reasoning": a brief explanation of your decision (1-2 sentences)
+
+Return only the JSON object, no markdown fences.
+EOT;
+
+        $response = $this->aiService->promptWithFallback($prompt, $primaryModel, $fallbackModel ?? $this->fallbackModel);
+
+        if (! $response['success']) {
+            return ['decision' => 'completed', 'reasoning' => 'Review unavailable — defaulting to completed.'];
+        }
+
+        $text = trim((string) $response['text']);
+        $text = (string) preg_replace('/^```(?:json)?\s*/m', '', $text);
+        $text = (string) preg_replace('/\s*```\s*$/m', '', trim($text));
+
+        $parsed = json_decode(trim($text), true);
+
+        if (! is_array($parsed) || ! isset($parsed['decision'])) {
+            return ['decision' => 'completed', 'reasoning' => 'Could not parse review response — defaulting to completed.'];
+        }
+
+        $decision = in_array($parsed['decision'], ['completed', 'incomplete', 'failed'], true)
+            ? $parsed['decision']
+            : 'completed';
+
+        return [
+            'decision' => $decision,
+            'reasoning' => (string) ($parsed['reasoning'] ?? ''),
+        ];
+    }
+
+    /**
      * Review research findings for accuracy and completeness.
      */
     public function reviewResearch(array $research): array
