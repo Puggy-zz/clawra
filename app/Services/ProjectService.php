@@ -56,12 +56,12 @@ class ProjectService
     public function ensureInboxProject(): Project
     {
         $project = Project::query()->firstOrCreate(
-            ['name' => 'Coordinator Inbox'],
+            ['name' => 'Inbox'],
             [
-                'description' => 'Default Phase 0 landing zone for coordinator-created work.',
-                'goals' => 'Track user requests until they are refined into dedicated projects.',
+                'description' => 'Holding area for tasks and ideas not yet assigned to a specific project.',
+                'goals' => null,
                 'status' => 'active',
-                'state_document' => $this->defaultStateDocument('Coordinator inbox'),
+                'state_document' => $this->defaultStateDocument('Inbox'),
                 'current_intent' => 'Waiting for a new orchestration request',
             ]
         );

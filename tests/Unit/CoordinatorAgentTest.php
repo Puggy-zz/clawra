@@ -8,8 +8,6 @@ use App\Models\ProcessLog;
 use App\Services\ProjectConversationService;
 use App\Services\ProjectService;
 use App\Services\RuntimeExecutionService;
-use App\Services\TaskService;
-use App\Services\WorkflowService;
 use Database\Seeders\AgentSeeder;
 use Database\Seeders\ProviderSeeder;
 use Database\Seeders\WorkflowSeeder;
@@ -27,7 +25,7 @@ it('can be instantiated', function () {
 it('can process messages', function () {
     $this->seed([AgentSeeder::class, ProviderSeeder::class, WorkflowSeeder::class]);
     ClawraCoordinatorConversationAgent::fake([
-        ['action' => 'chat', 'response' => 'Hello from Clawra.', 'draft' => null],
+        ['action' => 'chat', 'response' => 'Hello from Clawra.', 'task_name' => null],
     ]);
 
     $agent = new CoordinatorAgent(createMockAiService());
@@ -56,127 +54,58 @@ it('can route tasks', function () {
     expect($result['agent'])->toBe('Planner');
 });
 
-it('creates a draft instead of a task when the intent agent marks a request actionable', function () {
+it('creates tasks immediately when the user describes work to do', function () {
     $this->seed([AgentSeeder::class, ProviderSeeder::class, WorkflowSeeder::class]);
     ClawraCoordinatorConversationAgent::fake([
         [
-            'action' => 'draft',
-            'response' => 'I drafted a planning task. Tell me to create it when you are ready.',
-            'draft' => [
-                'title' => 'Plan the next milestone',
-                'summary' => 'Define the next project milestone and success conditions.',
-                'description' => 'Create a planning task for the next project milestone.',
-                'workflow_type' => 'planning',
-                'recommended_agent' => 'Planner',
-                'needs_clarification' => false,
-                'clarifying_questions' => [],
-                'goals' => ['Define milestone'],
-                'acceptance_criteria' => ['Milestone documented'],
+            'action' => 'create_tasks',
+            'response' => 'Created 2 research tasks.',
+            'tasks' => [
+                ['name' => 'Research API rate limits', 'description' => 'Look up rate limits.', 'workflow_type' => 'research', 'recommended_agent' => 'Researcher'],
+                ['name' => 'Research auth patterns', 'description' => 'Review auth options.', 'workflow_type' => 'research', 'recommended_agent' => 'Researcher'],
             ],
         ],
     ]);
 
     $agent = new CoordinatorAgent(createMockAiService());
 
-    $result = $agent->orchestrateRequest('Please plan the next milestone.');
+    $result = $agent->orchestrateRequest('Research API rate limits and auth patterns.');
 
-    expect($result['created_task'])->toBeFalse()
-        ->and($result['task_type'])->toBe('planning')
-        ->and($result['task'])->toBeNull()
-        ->and($result['response'])->toContain('create it');
+    expect($result['created_task'])->toBeTrue()
+        ->and($result['task']->name)->toBe('Research API rate limits');
 
-    expect(ProcessLog::query()->where('kind', 'draft.created')->exists())->toBeTrue();
+    expect(ProcessLog::query()->where('kind', 'task.created')->count())->toBe(2);
 });
 
-it('creates a task from the interpreted draft after confirmation', function () {
+it('persists all created tasks in the database', function () {
     $this->seed([AgentSeeder::class, ProviderSeeder::class, WorkflowSeeder::class]);
 
     $projectService = app(ProjectService::class);
     $conversationService = app(ProjectConversationService::class);
     $project = $projectService->ensureInboxProject();
     $conversation = $conversationService->ensureDefaultConversation($project);
-    $conversationService->storePendingTaskDraft($conversation, [
-        'title' => 'Plan the next milestone',
-        'summary' => 'Define the next project milestone and success conditions.',
-        'description' => 'Create a planning task for the next project milestone.',
-        'workflow_type' => 'planning',
-        'recommended_agent' => 'Planner',
-        'needs_clarification' => false,
-        'clarifying_questions' => [],
-        'goals' => ['Define milestone'],
-        'acceptance_criteria' => ['Milestone documented'],
-    ]);
+
     ClawraCoordinatorConversationAgent::fake([
         [
-            'action' => 'create_task',
-            'response' => 'That is ready. I will create the task now.',
-            'draft' => null,
+            'action' => 'create_tasks',
+            'response' => 'Created the task.',
+            'tasks' => [
+                ['name' => 'Research the API', 'description' => 'Look up rate limits.', 'workflow_type' => 'research', 'recommended_agent' => 'Researcher'],
+            ],
         ],
     ]);
 
-    $agent = new CoordinatorAgent(
-        createMockAiService(),
-        $projectService,
-        app(TaskService::class),
-        app(WorkflowService::class),
-    );
+    $agent = new CoordinatorAgent(createMockAiService());
+    $result = $agent->orchestrateRequest('Research API rate limits.', $project->id, $conversation->id);
 
-    $result = $agent->orchestrateRequest('confirm', $project->id, $conversation->id);
-
-    expect($result['created_task'])->toBeTrue()
-        ->and($result['task'])->not->toBeNull()
-        ->and($result['task']->name)->toBe('Plan the next milestone')
-        ->and($result['task']->recommended_agent_id)->not->toBeNull()
-        ->and($result['task']->recommendedAgent?->name)->toBe('Planner')
-        ->and($result['task']->description)->toContain('Recommended starting agent: Planner');
-
-    expect(ProcessLog::query()->where('kind', 'task.created')->exists())->toBeTrue();
-});
-
-it('creates a task from a ready draft when the confirmation is phrased naturally', function () {
-    $this->seed([AgentSeeder::class, ProviderSeeder::class, WorkflowSeeder::class]);
-
-    $projectService = app(ProjectService::class);
-    $conversationService = app(ProjectConversationService::class);
-    $project = $projectService->ensureInboxProject();
-    $conversation = $conversationService->ensureDefaultConversation($project);
-    $conversationService->storePendingTaskDraft($conversation, [
-        'title' => 'Plan the next milestone',
-        'summary' => 'Define the next project milestone and success conditions.',
-        'description' => 'Create a planning task for the next project milestone.',
-        'workflow_type' => 'planning',
-        'recommended_agent' => 'Planner',
-        'needs_clarification' => false,
-        'clarifying_questions' => [],
-        'goals' => ['Define milestone'],
-        'acceptance_criteria' => ['Milestone documented'],
-    ]);
-    ClawraCoordinatorConversationAgent::fake([
-        [
-            'action' => 'create_task',
-            'response' => 'That is ready. I will create the task now.',
-            'draft' => null,
-        ],
-    ]);
-
-    $agent = new CoordinatorAgent(
-        createMockAiService(),
-        $projectService,
-        app(TaskService::class),
-        app(WorkflowService::class),
-    );
-
-    $result = $agent->orchestrateRequest('Yes, that looks good - create it.', $project->id, $conversation->id);
-
-    expect($result['created_task'])->toBeTrue()
-        ->and($result['task'])->not->toBeNull()
-        ->and($conversation->fresh()->state_document['pending_task_draft'] ?? null)->toBeNull();
+    expect($result['task']->name)->toBe('Research the API')
+        ->and(\App\Models\Task::query()->where('project_conversation_id', $conversation->id)->count())->toBe(1);
 });
 
 it('keeps conversational responses task-free when the intent agent says chat', function () {
     $this->seed([AgentSeeder::class, ProviderSeeder::class, WorkflowSeeder::class]);
     ClawraCoordinatorConversationAgent::fake([
-        ['action' => 'chat', 'response' => 'Hello from Clawra.', 'draft' => null],
+        ['action' => 'chat', 'response' => 'Hello from Clawra.', 'task_name' => null],
     ]);
 
     $agent = new CoordinatorAgent(createMockAiService());
@@ -188,68 +117,54 @@ it('keeps conversational responses task-free when the intent agent says chat', f
         ->and($result['response'])->toBe('Hello from Clawra.');
 });
 
-it('stores concise research summaries instead of raw long search output', function () {
+it('keeps task names concise when the agent returns long names', function () {
     $this->seed([AgentSeeder::class, ProviderSeeder::class, WorkflowSeeder::class]);
     ClawraCoordinatorConversationAgent::fake([
         [
-            'action' => 'draft',
-            'response' => 'I drafted a research task. Tell me to create it when you are ready.',
-            'draft' => [
-                'title' => 'Investigate synthetic rate limits',
-                'summary' => str_repeat('Very long research summary. ', 40),
-                'description' => 'Investigate synthetic rate limits and document the findings.',
-                'workflow_type' => 'research',
-                'recommended_agent' => 'Researcher',
-                'needs_clarification' => false,
-                'clarifying_questions' => [],
-                'goals' => ['Capture limits'],
-                'acceptance_criteria' => ['Findings documented'],
+            'action' => 'create_tasks',
+            'response' => 'Task created.',
+            'tasks' => [
+                ['name' => str_repeat('A', 200), 'description' => 'Long name test.', 'workflow_type' => 'general', 'recommended_agent' => 'Planner'],
             ],
         ],
     ]);
 
     $agent = new CoordinatorAgent(createMockAiService());
+    $result = $agent->orchestrateRequest('Do something.');
 
-    $result = $agent->orchestrateRequest('Please investigate synthetic rate limits.');
-
-    expect($result['created_task'])->toBeFalse()
-        ->and(strlen((string) $result['artifact']['draft']['summary']))->toBeLessThanOrEqual(230)
-        ->and(strlen((string) json_encode(app(ProjectConversationService::class)->ensureDefaultConversation($result['project'])->fresh()->state_document)))->toBeLessThan(5000);
+    expect(strlen((string) $result['task']->name))->toBeLessThanOrEqual(123);
 });
 
-it('cancels a pending draft when the conversation agent decides to cancel it', function () {
+it('updates an existing task when the agent returns update_task', function () {
     $this->seed([AgentSeeder::class, ProviderSeeder::class, WorkflowSeeder::class]);
 
     $projectService = app(ProjectService::class);
     $conversationService = app(ProjectConversationService::class);
     $project = $projectService->ensureInboxProject();
     $conversation = $conversationService->ensureDefaultConversation($project);
-    $conversationService->storePendingTaskDraft($conversation, [
-        'title' => 'Plan the next milestone',
-        'summary' => 'Define the next project milestone and success conditions.',
-        'description' => 'Create a planning task for the next project milestone.',
-        'workflow_type' => 'planning',
-        'recommended_agent' => 'Planner',
-        'needs_clarification' => false,
-        'clarifying_questions' => [],
-        'goals' => ['Define milestone'],
-        'acceptance_criteria' => ['Milestone documented'],
-    ]);
+
+    $workflowService = app(\App\Services\WorkflowService::class);
+    $taskService = app(\App\Services\TaskService::class);
+    $workflow = $workflowService->getDefaultWorkflowForType('general');
+    $task = $taskService->createTaskWithWorkflow($project->id, $workflow->id, 'Original name', 'Original desc', null, $conversation->id);
+
     ClawraCoordinatorConversationAgent::fake([
         [
-            'action' => 'cancel_draft',
-            'response' => 'Okay, I cleared that draft.',
-            'draft' => null,
+            'action' => 'update_task',
+            'response' => 'Updated the task name.',
+            'task_id' => $task->id,
+            'task_name' => 'Updated name',
+            'task_description' => 'Updated desc.',
+            'task_workflow_type' => 'general',
+            'task_recommended_agent' => 'Planner',
         ],
     ]);
 
-    $agent = new CoordinatorAgent(createMockAiService(), $projectService, app(TaskService::class), app(WorkflowService::class));
+    $agent = new CoordinatorAgent(createMockAiService());
+    $result = $agent->orchestrateRequest('Change the task name to Updated name.', $project->id, $conversation->id);
 
-    $result = $agent->orchestrateRequest('Actually, drop that task idea.', $project->id, $conversation->id);
-
-    expect($result['created_task'])->toBeFalse()
-        ->and($conversation->fresh()->state_document['pending_task_draft'] ?? null)->toBeNull()
-        ->and(ProcessLog::query()->where('kind', 'draft.cancelled')->exists())->toBeTrue();
+    expect($result['task']->name)->toBe('Updated name')
+        ->and(ProcessLog::query()->where('kind', 'task.updated')->exists())->toBeTrue();
 });
 
 it('uses runtime execution for development tasks when available', function () {

@@ -22,7 +22,7 @@ use Illuminate\Support\Str;
 uses(RefreshDatabase::class);
 
 it('can display the welcome page', function () {
-    $this->get('/')->assertSuccessful()->assertSee('Clawra AI Coordinator');
+    $this->get('/')->assertSuccessful()->assertSee('Clawra');
 });
 
 it('can display the coordinator interface', function () {
@@ -83,7 +83,7 @@ it('can create an agent runtime from the coordinator interface', function () {
 
     $agent = Agent::query()->where('name', 'Planner')->firstOrFail();
     $route = ProviderRoute::query()->where('name', 'synthetic-opencode')->firstOrFail();
-    $model = ProviderModel::query()->where('provider_route_id', $route->id)->where('name', 'deepseek-v3')->firstOrFail();
+    $model = ProviderModel::query()->where('provider_route_id', $route->id)->where('name', 'qwen3-coder')->firstOrFail();
 
     $this->from('/coordinator')->post('/coordinator/agent-runtimes', [
         'agent_id' => $agent->id,
@@ -130,18 +130,15 @@ it('returns a success payload for coordinator requests', function () {
     $this->seed([AgentSeeder::class, ProviderSeeder::class, WorkflowSeeder::class]);
     ClawraCoordinatorConversationAgent::fake([
         [
-            'action' => 'draft',
-            'response' => 'I drafted a planning task. Tell me to create it when you are ready.',
-            'draft' => [
-                'title' => 'Plan provider fallback validation',
-                'summary' => 'Plan the Phase 0 work needed to validate provider fallback behavior.',
-                'description' => 'Define the milestones for provider fallback validation.',
-                'workflow_type' => 'planning',
-                'recommended_agent' => 'Planner',
-                'needs_clarification' => false,
-                'clarifying_questions' => [],
-                'goals' => ['Validate fallback'],
-                'acceptance_criteria' => ['Milestones captured'],
+            'action' => 'propose_tasks',
+            'response' => 'I proposed a planning task list.',
+            'tasks' => [
+                [
+                    'name' => 'Plan provider fallback validation',
+                    'description' => 'Define the milestones for provider fallback validation.',
+                    'workflow_type' => 'planning',
+                    'recommended_agent' => 'Planner',
+                ],
             ],
         ],
     ]);
@@ -156,87 +153,76 @@ it('returns a success payload for coordinator requests', function () {
         ->assertJsonStructure([
             'status',
             'response',
-            'meta' => ['created_task', 'task_type', 'project', 'task', 'recommended_agent', 'pending_task_draft', 'process_logs', 'external_sessions'],
+            'meta' => ['created_task', 'task_type', 'project', 'task', 'recommended_agent', 'pending_task_list', 'process_logs', 'external_sessions'],
             'timestamp',
         ]);
 });
 
-it('creates a task after the user confirms a drafted request', function () {
+it('stores the proposed task list in the conversation state document', function () {
     $this->seed([AgentSeeder::class, ProviderSeeder::class, WorkflowSeeder::class]);
 
     $project = app(ProjectService::class)->ensureInboxProject();
     $conversation = app(ProjectConversationService::class)->ensureDefaultConversation($project);
-    app(ProjectConversationService::class)->storePendingTaskDraft($conversation, [
-        'title' => 'Plan provider fallback validation',
-        'summary' => 'Plan the Phase 0 work needed to validate provider fallback behavior.',
-        'description' => 'Define the milestones for provider fallback validation.',
-        'workflow_type' => 'planning',
-        'recommended_agent' => 'Planner',
-        'needs_clarification' => false,
-        'clarifying_questions' => [],
-        'goals' => ['Validate fallback'],
-        'acceptance_criteria' => ['Milestones captured'],
-    ]);
     ClawraCoordinatorConversationAgent::fake([
         [
-            'action' => 'create_task',
-            'response' => 'That is ready. I will create the task now.',
-            'draft' => null,
+            'action' => 'propose_tasks',
+            'response' => 'Here are the tasks.',
+            'tasks' => [
+                [
+                    'name' => 'Plan provider fallback validation',
+                    'description' => 'Define the milestones for provider fallback validation.',
+                    'workflow_type' => 'planning',
+                    'recommended_agent' => 'Planner',
+                ],
+            ],
         ],
     ]);
 
     $response = $this->postJson('/coordinator/message', [
-        'message' => 'confirm',
+        'message' => 'Plan phase 0 milestones.',
         'project_id' => $project->id,
         'conversation_id' => $conversation->id,
     ]);
 
     $response->assertSuccessful()
-        ->assertJsonPath('meta.created_task', true)
-        ->assertJsonPath('meta.task_type', 'planning');
+        ->assertJsonPath('meta.created_task', false);
 
-    $task = Task::query()->where('name', 'Plan provider fallback validation')->first();
+    $stored = app(ProjectConversationService::class)->getPendingTaskList($conversation->fresh());
 
-    expect($task)->not->toBeNull()
-        ->and($task?->recommendedAgent?->name)->toBe('Planner');
+    expect($stored)->toHaveCount(1)
+        ->and($stored[0]['name'])->toBe('Plan provider fallback validation');
 });
 
-it('creates a task after a natural language confirmation for a ready draft', function () {
+it('returns the task list in meta when the agent proposes tasks', function () {
     $this->seed([AgentSeeder::class, ProviderSeeder::class, WorkflowSeeder::class]);
-
-    $project = app(ProjectService::class)->ensureInboxProject();
-    $conversation = app(ProjectConversationService::class)->ensureDefaultConversation($project);
-    app(ProjectConversationService::class)->storePendingTaskDraft($conversation, [
-        'title' => 'Plan provider fallback validation',
-        'summary' => 'Plan the Phase 0 work needed to validate provider fallback behavior.',
-        'description' => 'Define the milestones for provider fallback validation.',
-        'workflow_type' => 'planning',
-        'recommended_agent' => 'Planner',
-        'needs_clarification' => false,
-        'clarifying_questions' => [],
-        'goals' => ['Validate fallback'],
-        'acceptance_criteria' => ['Milestones captured'],
-    ]);
     ClawraCoordinatorConversationAgent::fake([
         [
-            'action' => 'create_task',
-            'response' => 'That is ready. I will create the task now.',
-            'draft' => null,
+            'action' => 'propose_tasks',
+            'response' => 'Here are two tasks.',
+            'tasks' => [
+                [
+                    'name' => 'Plan provider fallback validation',
+                    'description' => 'Define the milestones.',
+                    'workflow_type' => 'planning',
+                    'recommended_agent' => 'Planner',
+                ],
+                [
+                    'name' => 'Research retry timing',
+                    'description' => 'Identify retry intervals.',
+                    'workflow_type' => 'research',
+                    'recommended_agent' => 'Researcher',
+                ],
+            ],
         ],
     ]);
 
     $response = $this->postJson('/coordinator/message', [
-        'message' => 'Yes, that looks good - create it.',
-        'project_id' => $project->id,
-        'conversation_id' => $conversation->id,
+        'message' => 'Plan the next phase.',
     ]);
 
     $response->assertSuccessful()
-        ->assertJsonPath('meta.created_task', true)
-        ->assertJsonPath('meta.pending_task_draft', null);
-
-    expect(Task::query()->where('name', 'Plan provider fallback validation')->exists())->toBeTrue()
-        ->and($conversation->fresh()->state_document['pending_task_draft'] ?? null)->toBeNull();
+        ->assertJsonPath('meta.created_task', false)
+        ->assertJsonCount(2, 'meta.pending_task_list');
 });
 
 it('keeps conversation messages in a stable order on refresh', function () {
@@ -324,7 +310,7 @@ it('shows the current pending draft on the coordinator page', function () {
 it('responds conversationally without creating a task for greetings', function () {
     $this->seed([AgentSeeder::class, ProviderSeeder::class, WorkflowSeeder::class]);
     ClawraCoordinatorConversationAgent::fake([
-        ['action' => 'chat', 'response' => 'Hello from the coordinator agent.', 'draft' => null],
+        ['action' => 'chat', 'response' => 'Hello from the coordinator agent.', 'tasks' => null],
     ]);
 
     $response = $this->postJson('/coordinator/message', [
@@ -340,41 +326,33 @@ it('responds conversationally without creating a task for greetings', function (
     expect(Task::query()->count())->toBe(0);
 });
 
-it('clears a pending draft when the conversation agent decides to cancel it', function () {
+it('clears the pending task list when the conversation agent decides to cancel it', function () {
     $this->seed([AgentSeeder::class, ProviderSeeder::class, WorkflowSeeder::class]);
 
     $project = app(ProjectService::class)->ensureInboxProject();
     $conversation = app(ProjectConversationService::class)->ensureDefaultConversation($project);
-    app(ProjectConversationService::class)->storePendingTaskDraft($conversation, [
-        'title' => 'Plan provider fallback validation',
-        'summary' => 'Plan the Phase 0 work needed to validate provider fallback behavior.',
-        'description' => 'Define the milestones for provider fallback validation.',
-        'workflow_type' => 'planning',
-        'recommended_agent' => 'Planner',
-        'needs_clarification' => false,
-        'clarifying_questions' => [],
-        'goals' => ['Validate fallback'],
-        'acceptance_criteria' => ['Milestones captured'],
+    app(ProjectConversationService::class)->storePendingTaskList($conversation, [
+        ['name' => 'Plan provider fallback validation', 'description' => 'Define milestones.', 'workflow_type' => 'planning', 'recommended_agent' => 'Planner'],
     ]);
     ClawraCoordinatorConversationAgent::fake([
         [
-            'action' => 'cancel_draft',
-            'response' => 'Okay, I cleared that draft.',
-            'draft' => null,
+            'action' => 'cancel_tasks',
+            'response' => 'Okay, I cleared those tasks.',
+            'tasks' => null,
         ],
     ]);
 
     $response = $this->postJson('/coordinator/message', [
-        'message' => 'Actually, drop that task idea.',
+        'message' => 'Actually, drop those task ideas.',
         'project_id' => $project->id,
         'conversation_id' => $conversation->id,
     ]);
 
     $response->assertSuccessful()
         ->assertJsonPath('meta.created_task', false)
-        ->assertJsonPath('meta.pending_task_draft', null);
+        ->assertJsonPath('meta.pending_task_list', null);
 
-    expect($conversation->fresh()->state_document['pending_task_draft'] ?? null)->toBeNull();
+    expect(app(ProjectConversationService::class)->getPendingTaskList($conversation->fresh()))->toBeEmpty();
 });
 
 it('can create a project conversation from the coordinator interface', function () {

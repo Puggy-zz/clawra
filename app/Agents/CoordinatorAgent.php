@@ -87,49 +87,21 @@ class CoordinatorAgent
     public function orchestrateRequest(string $message, ?int $projectId = null, ?int $conversationId = null): array
     {
         ['project' => $project, 'conversation' => $conversation] = $this->projectConversationService->resolveContext($projectId, $conversationId);
-        $existingDraft = $this->projectConversationService->getPendingTaskDraft($conversation);
         $coordinator = $this->agentService?->getAgentByName('Clawra');
 
-        $draftConversation = $this->draftTaskConversation($conversation, $message, $existingDraft);
-        $action = $draftConversation['action'];
-        $draft = $draftConversation['draft'];
+        $result = $this->draftTaskConversation($conversation, $message);
+        $action = $result['action'];
 
-        if ($action === 'cancel_draft') {
-            if ($existingDraft !== null) {
-                $this->projectConversationService->clearPendingTaskDraft($conversation);
-                $this->logProcess('draft.cancelled', 'cancelled', 'Pending task draft cleared.', [
-                    'message' => $message,
-                    'draft' => $existingDraft,
-                ], $project, $conversation, null, $coordinator);
-            }
-
-            return [
-                'response' => $draftConversation['response'],
-                'project' => $project,
-                'conversation' => $conversation,
-                'task' => null,
-                'artifact' => null,
-                'task_type' => 'chat',
-                'created_task' => false,
-            ];
+        if ($action === 'create_tasks' && ! empty($result['tasks'])) {
+            return $this->createTasksFromConversation($project, $conversation, $result['tasks'], $result['response'], $coordinator);
         }
 
-        if ($action === 'create_task') {
-            $draftToCreate = $draft ?? $existingDraft;
-
-            if (is_array($draftToCreate) && (($draftToCreate['needs_clarification'] ?? false) === false)) {
-                return $this->createTaskFromDraft($project, $conversation, $draftToCreate);
-            }
-
-            return $this->storeDraftConversationResult($project, $conversation, $message, $draftToCreate, $existingDraft, $draftConversation['response']);
-        }
-
-        if ($action === 'draft') {
-            return $this->storeDraftConversationResult($project, $conversation, $message, $draft, $existingDraft, $draftConversation['response']);
+        if ($action === 'update_task' && is_array($result['task']) && isset($result['task']['id'])) {
+            return $this->updateTaskFromConversation($project, $conversation, $result['task'], $result['response'], $coordinator);
         }
 
         return [
-            'response' => $draftConversation['response'],
+            'response' => $result['response'],
             'project' => $project,
             'conversation' => $conversation,
             'task' => null,
@@ -407,49 +379,179 @@ class CoordinatorAgent
     }
 
     /**
-     * @return array{action: string, response: string, draft: array<string, mixed>|null}
+     * @return array{action: string, response: string, tasks: array<int, array<string, mixed>>, task: array<string, mixed>|null}
      */
-    protected function draftTaskConversation(\App\Models\ProjectConversation $conversation, string $message, ?array $existingDraft): array
+    protected function draftTaskConversation(\App\Models\ProjectConversation $conversation, string $message): array
     {
-        $instruction = "Latest user message: {$message}\n";
-
-        if ($existingDraft !== null) {
-            $instruction .= 'Current draft: '.json_encode($existingDraft, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        }
-
-        $response = $this->projectConversationService->prompt($conversation, $instruction);
+        $response = $this->projectConversationService->prompt($conversation, $message);
 
         $structured = $response->toArray();
 
         if (is_array($structured)) {
             $action = $structured['action'] ?? 'chat';
-            $draftPayload = is_array($structured['draft'] ?? null)
-                ? $this->normalizeDraft($structured['draft'], $structured['draft']['workflow_type'] ?? ($existingDraft['workflow_type'] ?? 'general'), $existingDraft)
-                : null;
+            $action = in_array($action, ['chat', 'create_tasks', 'update_task'], true) ? $action : 'chat';
+
+            $tasks = [];
+            $task = null;
+
+            if ($action === 'create_tasks' && is_array($structured['tasks'] ?? null) && count($structured['tasks']) > 0) {
+                $tasks = collect($structured['tasks'])
+                    ->filter(fn (mixed $t): bool => is_array($t))
+                    ->map(function (array $t): ?array {
+                        $name = $this->sanitizeStructuredString($t['name'] ?? null);
+
+                        if ($name === null || $name === '') {
+                            return null;
+                        }
+
+                        return [
+                            'name' => $name,
+                            'description' => $this->sanitizeStructuredString($t['description'] ?? null) ?? '',
+                            'workflow_type' => $this->sanitizeStructuredString($t['workflow_type'] ?? null) ?? 'general',
+                            'recommended_agent' => $this->sanitizeStructuredString($t['recommended_agent'] ?? null) ?? 'Planner',
+                        ];
+                    })
+                    ->filter()
+                    ->values()
+                    ->all();
+            }
+
+            if ($action === 'update_task') {
+                $taskName = $this->sanitizeStructuredString($structured['task_name'] ?? null);
+
+                if ($taskName !== null && $taskName !== '') {
+                    $task = [
+                        'id' => isset($structured['task_id']) ? (int) $structured['task_id'] : null,
+                        'name' => $taskName,
+                        'description' => $this->sanitizeStructuredString($structured['task_description'] ?? null) ?? '',
+                        'workflow_type' => $this->sanitizeStructuredString($structured['task_workflow_type'] ?? null) ?? 'general',
+                        'recommended_agent' => $this->sanitizeStructuredString($structured['task_recommended_agent'] ?? null) ?? 'Planner',
+                    ];
+                }
+            }
 
             return [
-                'action' => in_array($action, ['chat', 'draft', 'create_task', 'cancel_draft'], true) ? $action : 'chat',
-                'response' => (string) ($structured['response'] ?? ($draftPayload !== null ? $this->defaultDraftResponse($draftPayload) : 'Okay.')),
-                'draft' => in_array($action, ['draft', 'create_task'], true) ? $draftPayload : null,
+                'action' => $action,
+                'response' => (string) ($structured['response'] ?? 'Okay.'),
+                'tasks' => $tasks,
+                'task' => $task,
             ];
         }
 
-        $draft = $this->normalizeDraft([
-            'title' => str($message)->squish()->limit(70)->value(),
-            'summary' => str($message)->squish()->limit(180)->value(),
-            'description' => str($message)->squish()->value(),
-            'workflow_type' => $existingDraft['workflow_type'] ?? 'general',
-            'recommended_agent' => ($existingDraft['workflow_type'] ?? 'general') === 'research' ? 'Researcher' : 'Planner',
-            'needs_clarification' => true,
-            'clarifying_questions' => ['What outcome do you want from this task?'],
-            'goals' => [],
-            'acceptance_criteria' => [],
-        ], $existingDraft['workflow_type'] ?? 'general', $existingDraft);
+        return [
+            'action' => 'chat',
+            'response' => "I'm here. What would you like to work on?",
+            'tasks' => [],
+            'task' => null,
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $tasksData
+     */
+    protected function createTasksFromConversation(
+        \App\Models\Project $project,
+        \App\Models\ProjectConversation $conversation,
+        array $tasksData,
+        string $response,
+        ?\App\Models\Agent $coordinator = null,
+    ): array {
+        $createdTasks = [];
+
+        foreach ($tasksData as $taskData) {
+            $taskType = in_array($taskData['workflow_type'] ?? 'general', ['planning', 'research', 'general'], true)
+                ? ($taskData['workflow_type'] ?? 'general')
+                : 'general';
+            $workflow = $this->workflowService->getDefaultWorkflowForType($taskType);
+            $recommendedAgentName = $this->normalizeRecommendedAgent((string) ($taskData['recommended_agent'] ?? 'Planner'));
+            $recommendedAgentId = $this->resolveRecommendedAgentId($recommendedAgentName);
+
+            $task = $this->taskService->createTaskWithWorkflow(
+                $project->id,
+                $workflow->id,
+                $this->compactText((string) ($taskData['name'] ?? 'Task'), 120),
+                $this->compactText((string) ($taskData['description'] ?? ''), 900),
+                $recommendedAgentId,
+                $conversation->id,
+            );
+
+            $this->projectService->recordTask($project, $task, $taskData['description'] ?? $taskData['name'] ?? '', [
+                'task_type' => $taskType,
+            ]);
+
+            $this->logProcess('task.created', 'completed', "Created task: {$task->name}.", [
+                'task' => $taskData,
+            ], $project, $conversation, $task, $coordinator);
+
+            $createdTasks[] = $task;
+        }
+
+        $firstTask = $createdTasks[0] ?? null;
 
         return [
-            'action' => 'draft',
-            'response' => 'I want to frame this properly before creating a task. What outcome do you want from this conversation?',
-            'draft' => $draft,
+            'response' => $response,
+            'project' => $project,
+            'conversation' => $conversation,
+            'task' => $firstTask,
+            'artifact' => ['tasks' => $tasksData],
+            'task_type' => $firstTask ? ($tasksData[0]['workflow_type'] ?? 'general') : 'general',
+            'created_task' => count($createdTasks) > 0,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $taskData
+     */
+    protected function updateTaskFromConversation(
+        \App\Models\Project $project,
+        \App\Models\ProjectConversation $conversation,
+        array $taskData,
+        string $response,
+        ?\App\Models\Agent $coordinator = null,
+    ): array {
+        $taskId = (int) $taskData['id'];
+        $task = $this->taskService->getTaskById($taskId);
+
+        if (! $task instanceof \App\Models\Task || $task->project_id !== $project->id) {
+            return [
+                'response' => $response,
+                'project' => $project,
+                'conversation' => $conversation,
+                'task' => null,
+                'artifact' => null,
+                'task_type' => 'chat',
+                'created_task' => false,
+            ];
+        }
+
+        $taskType = in_array($taskData['workflow_type'] ?? 'general', ['planning', 'research', 'general'], true)
+            ? ($taskData['workflow_type'] ?? 'general')
+            : 'general';
+        $recommendedAgentName = $this->normalizeRecommendedAgent((string) ($taskData['recommended_agent'] ?? 'Planner'));
+        $recommendedAgentId = $this->resolveRecommendedAgentId($recommendedAgentName);
+        $workflow = $this->workflowService->getDefaultWorkflowForType($taskType);
+
+        $this->taskService->updateTask($taskId, [
+            'name' => $this->compactText((string) ($taskData['name'] ?? $task->name), 120),
+            'description' => $this->compactText((string) ($taskData['description'] ?? $task->description ?? ''), 900),
+            'workflow_id' => $workflow->id,
+            'recommended_agent_id' => $recommendedAgentId,
+        ]);
+
+        $updatedTask = $this->taskService->getTaskById($taskId);
+
+        $this->logProcess('task.updated', 'completed', "Updated task: {$task->name}.", [
+            'task' => $taskData,
+        ], $project, $conversation, $updatedTask, $coordinator);
+
+        return [
+            'response' => $response,
+            'project' => $project,
+            'conversation' => $conversation,
+            'task' => $updatedTask,
+            'artifact' => ['task' => $taskData],
+            'task_type' => $taskType,
+            'created_task' => false,
         ];
     }
 
@@ -578,6 +680,21 @@ class CoordinatorAgent
             $taskName,
             $this->compactText((string) $summary, 320),
         );
+    }
+
+    protected function sanitizeStructuredString(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $str = trim((string) $value, " \t\n\r\0\x0B\"'");
+
+        if ($str === '' || strtolower($str) === 'null') {
+            return null;
+        }
+
+        return $str;
     }
 
     protected function compactText(string $text, int $limit = 320): string

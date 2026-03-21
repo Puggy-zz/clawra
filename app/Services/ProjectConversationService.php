@@ -7,6 +7,7 @@ namespace App\Services;
 use App\Ai\Agents\ClawraCoordinatorConversationAgent;
 use App\Models\Project;
 use App\Models\ProjectConversation;
+use App\Models\Task;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Laravel\Ai\Responses\StructuredAgentResponse;
@@ -116,12 +117,75 @@ class ProjectConversationService
         ]);
     }
 
+    /**
+     * @return array<int, array{name: string, description: string, workflow_type: string, recommended_agent: string}>
+     */
+    public function getPendingTaskList(ProjectConversation $conversation): array
+    {
+        $state = $conversation->state_document ?? [];
+        $list = $state['pending_task_list'] ?? null;
+
+        return is_array($list) ? $list : [];
+    }
+
+    /**
+     * @param  array<int, array{name: string, description: string, workflow_type: string, recommended_agent: string}>  $tasks
+     */
+    public function storePendingTaskList(ProjectConversation $conversation, array $tasks): void
+    {
+        $state = $conversation->state_document ?? $this->defaultStateDocument($conversation->project);
+        $state['pending_task_list'] = $tasks;
+        $state['updated_at'] = now()->toISOString();
+
+        $conversation->update(['state_document' => $state]);
+    }
+
+    public function clearPendingTaskList(ProjectConversation $conversation): void
+    {
+        $state = $conversation->state_document ?? $this->defaultStateDocument($conversation->project);
+        unset($state['pending_task_list']);
+        $state['updated_at'] = now()->toISOString();
+
+        $conversation->update(['state_document' => $state]);
+    }
+
+    public function storePendingMessage(ProjectConversation $conversation, string $message): void
+    {
+        $state = $conversation->state_document ?? $this->defaultStateDocument($conversation->project);
+        $state['pending_message'] = $message;
+        $state['is_processing'] = true;
+        $state['updated_at'] = now()->toISOString();
+
+        $conversation->update(['state_document' => $state]);
+    }
+
+    public function clearPendingMessage(ProjectConversation $conversation): void
+    {
+        $state = $conversation->state_document ?? $this->defaultStateDocument($conversation->project);
+        unset($state['pending_message'], $state['is_processing']);
+        $state['updated_at'] = now()->toISOString();
+
+        $conversation->update(['state_document' => $state]);
+    }
+
+    public function isProcessing(ProjectConversation $conversation): bool
+    {
+        return (bool) ($conversation->state_document['is_processing'] ?? false);
+    }
+
     public function prompt(ProjectConversation $conversation, string $message): StructuredAgentResponse
     {
+        $conversationTasks = Task::query()
+            ->with(['workflow', 'recommendedAgent'])
+            ->where('project_conversation_id', $conversation->id)
+            ->orderBy('created_at')
+            ->get();
+
         $agent = new ClawraCoordinatorConversationAgent(
             $conversation,
             $conversation->project,
             $this->agentService->getAssignableAgents(),
+            $conversationTasks,
         );
 
         $config = $this->agentService->getLaravelAiConfigForAgent('Clawra', 'synthetic', 'gemini', 'deepseek-v3', 'gemini-2.5-pro');
@@ -151,42 +215,50 @@ class ProjectConversationService
      */
     public function getMessages(ProjectConversation $conversation, int $limit = 100): array
     {
-        if (! is_string($conversation->laravel_ai_conversation_id) || $conversation->laravel_ai_conversation_id === '') {
-            return [];
+        $messages = [];
+
+        if (is_string($conversation->laravel_ai_conversation_id) && $conversation->laravel_ai_conversation_id !== '') {
+            $messages = DB::table('agent_conversation_messages')
+                ->where('conversation_id', $conversation->laravel_ai_conversation_id)
+                ->orderBy('created_at')
+                ->orderByRaw("CASE WHEN role = 'user' THEN 0 ELSE 1 END")
+                ->orderBy('id')
+                ->limit($limit)
+                ->get()
+                ->map(function ($message): ?array {
+                    $content = $this->normalizeConversationMessageContent((string) $message->role, (string) $message->content);
+
+                    if ($content !== (string) $message->content && trim($content) !== '') {
+                        DB::table('agent_conversation_messages')
+                            ->where('id', $message->id)
+                            ->update([
+                                'content' => $content,
+                                'updated_at' => now(),
+                            ]);
+                    }
+
+                    if (trim($content) === '') {
+                        return null;
+                    }
+
+                    return [
+                        'role' => (string) $message->role,
+                        'content' => trim($content),
+                        'created_at' => $message->created_at,
+                    ];
+                })
+                ->filter()
+                ->values()
+                ->all();
         }
 
-        return DB::table('agent_conversation_messages')
-            ->where('conversation_id', $conversation->laravel_ai_conversation_id)
-            ->orderBy('created_at')
-            ->orderByRaw("CASE WHEN role = 'user' THEN 0 ELSE 1 END")
-            ->orderBy('id')
-            ->limit($limit)
-            ->get()
-            ->map(function ($message): ?array {
-                $content = $this->normalizeConversationMessageContent((string) $message->role, (string) $message->content);
+        $pending = $conversation->state_document['pending_message'] ?? null;
 
-                if ($content !== (string) $message->content && trim($content) !== '') {
-                    DB::table('agent_conversation_messages')
-                        ->where('id', $message->id)
-                        ->update([
-                            'content' => $content,
-                            'updated_at' => now(),
-                        ]);
-                }
+        if (is_string($pending) && $pending !== '') {
+            $messages[] = ['role' => 'user', 'content' => $pending, 'created_at' => null];
+        }
 
-                if (trim($content) === '') {
-                    return null;
-                }
-
-                return [
-                    'role' => (string) $message->role,
-                    'content' => trim($content),
-                    'created_at' => $message->created_at,
-                ];
-            })
-            ->filter()
-            ->values()
-            ->all();
+        return $messages;
     }
 
     protected function replaceLatestConversationMessageContent(ProjectConversation $conversation, string $role, string $content): void
@@ -216,13 +288,6 @@ class ProjectConversationService
 
     protected function normalizeConversationMessageContent(string $role, string $content): string
     {
-        if ($role === 'user' && str_starts_with($content, 'Latest user message: ')) {
-            $normalized = preg_replace('/^Latest user message:\s*/', '', $content);
-            $normalized = preg_replace('/\s*Current draft:\s*\{.*$/s', '', (string) $normalized);
-
-            return trim((string) $normalized);
-        }
-
         if ($role === 'assistant') {
             $trimmed = trim($content);
 
