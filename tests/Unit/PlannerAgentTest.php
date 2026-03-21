@@ -38,15 +38,10 @@ it('can breakdown features', function () {
 it('uses the planner model configuration stored in the database', function () {
     $this->seed([ProviderSeeder::class, AgentSeeder::class]);
 
-    Agent::query()->where('name', 'Planner')->update([
-        'model' => 'gemini',
-        'fallback_model' => 'synthetic',
-    ]);
-
     $aiService = Mockery::mock(\App\Services\AiService::class);
     $aiService->shouldReceive('promptWithFallback')
         ->once()
-        ->with(Mockery::type('string'), 'hf:moonshotai/Kimi-K2-Instruct-0905', 'gemini-2.5-pro')
+        ->with(Mockery::type('string'), 'hf:moonshotai/Kimi-K2-Thinking', 'hf:deepseek-ai/DeepSeek-V3.2')
         ->andReturn([
             'success' => true,
             'text' => "Configured summary\n- First action",

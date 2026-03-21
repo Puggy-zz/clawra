@@ -1218,7 +1218,7 @@
                                                             <div class="form-row">
                                                                 <label>Harness *</label>
                                                                 <select name="harness" class="form-select" required>
-                                                                    @foreach (['laravel_ai', 'opencode', 'codex'] as $h)
+                                                                    @foreach (['laravel_ai', 'opencode', 'claude_code', 'codex'] as $h)
                                                                         <option value="{{ $h }}" @selected($route->harness === $h)>{{ $h }}</option>
                                                                     @endforeach
                                                                 </select>
@@ -1381,7 +1381,7 @@
                                                 <div class="form-row">
                                                     <label>Harness *</label>
                                                     <select name="harness" class="form-select" required>
-                                                        @foreach (['laravel_ai', 'opencode', 'codex'] as $h)
+                                                        @foreach (['laravel_ai', 'opencode', 'claude_code', 'codex'] as $h)
                                                             <option value="{{ $h }}">{{ $h }}</option>
                                                         @endforeach
                                                     </select>
@@ -1453,25 +1453,6 @@
                                     <input name="role" type="text" class="form-input" placeholder="e.g. Planning agent" required>
                                 </div>
                             </div>
-                            <div class="form-grid-2">
-                                <div class="form-row">
-                                    <label>Primary Model *</label>
-                                    <select name="model" class="form-select" required>
-                                        @foreach ($providers as $p)
-                                            <option value="{{ $p->name }}">{{ $p->name }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                                <div class="form-row">
-                                    <label>Fallback Model</label>
-                                    <select name="fallback_model" class="form-select">
-                                        <option value="">— None —</option>
-                                        @foreach ($providers as $p)
-                                            <option value="{{ $p->name }}">{{ $p->name }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-                            </div>
                             <div class="form-row">
                                 <label>Description</label>
                                 <textarea name="description" class="form-textarea" placeholder="What does this agent do?"></textarea>
@@ -1500,9 +1481,6 @@
                                         @if ($agent->runtimes->isNotEmpty())
                                             <span class="pill">{{ $agent->runtimes->count() }} {{ Str::plural('runtime', $agent->runtimes->count()) }}</span>
                                         @endif
-                                        @if ($agent->model)
-                                            <span class="pill">{{ $agent->model }}</span>
-                                        @endif
                                     </div>
                                 </div>
                                 <span class="btn btn-xs btn-ghost">Edit</span>
@@ -1519,25 +1497,6 @@
                                         <div class="form-row">
                                             <label>Role *</label>
                                             <input name="role" type="text" class="form-input" value="{{ $agent->role }}" required>
-                                        </div>
-                                    </div>
-                                    <div class="form-grid-2">
-                                        <div class="form-row">
-                                            <label>Primary Model *</label>
-                                            <select name="model" class="form-select" required>
-                                                @foreach ($providers as $p)
-                                                    <option value="{{ $p->name }}" @selected($agent->model === $p->name)>{{ $p->name }}</option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                        <div class="form-row">
-                                            <label>Fallback Model</label>
-                                            <select name="fallback_model" class="form-select">
-                                                <option value="">— None —</option>
-                                                @foreach ($providers as $p)
-                                                    <option value="{{ $p->name }}" @selected($agent->fallback_model === $p->name)>{{ $p->name }}</option>
-                                                @endforeach
-                                            </select>
                                         </div>
                                     </div>
                                     <div class="form-row">
@@ -1585,7 +1544,7 @@
                                                             <div class="form-row">
                                                                 <label>Harness *</label>
                                                                 <select name="harness" class="form-select" required>
-                                                                    @foreach (['laravel_ai', 'opencode', 'codex'] as $h)
+                                                                    @foreach (['laravel_ai', 'opencode', 'claude_code', 'codex'] as $h)
                                                                         <option value="{{ $h }}" @selected($runtime->harness === $h)>{{ $h }}</option>
                                                                     @endforeach
                                                                 </select>
@@ -1692,7 +1651,7 @@
                                                 <div class="form-row">
                                                     <label>Harness *</label>
                                                     <select name="harness" class="form-select" required>
-                                                        @foreach (['laravel_ai', 'opencode', 'codex'] as $h)
+                                                        @foreach (['laravel_ai', 'opencode', 'claude_code', 'codex'] as $h)
                                                             <option value="{{ $h }}">{{ $h }}</option>
                                                         @endforeach
                                                     </select>

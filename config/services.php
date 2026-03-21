@@ -42,9 +42,14 @@ return [
         'timeout' => (int) env('OPENCODE_TIMEOUT', 120),
     ],
 
+    'claude_code' => [
+        'node_binary' => env('CLAUDE_CODE_NODE_BINARY', 'node'),
+        'timeout' => (int) env('CLAUDE_CODE_TIMEOUT', 300),
+    ],
+
     'clawra' => [
-        'agent_timeout' => (int) env('CLAWRA_AGENT_TIMEOUT', 12),
-        'search_timeout' => (int) env('CLAWRA_SEARCH_TIMEOUT', 8),
+        'agent_timeout' => (int) env('CLAWRA_AGENT_TIMEOUT', 300),
+        'search_timeout' => (int) env('CLAWRA_SEARCH_TIMEOUT', 30),
     ],
 
 ];

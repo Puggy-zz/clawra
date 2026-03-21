@@ -695,6 +695,9 @@
                                             @if ($task->description)
                                                 <div class="meta">{{ $task->description }}</div>
                                             @endif
+                                            @if ($task->result && in_array($task->status, ['completed', 'failed']))
+                                                <div class="meta" style="font-style:italic; margin-top:4px;">{{ Str::limit($task->result, 160) }}</div>
+                                            @endif
                                             <form class="details-grid" method="POST" action="/coordinator/tasks/{{ $task->id }}">
                                                 @csrf
                                                 @method('PATCH')
@@ -836,17 +839,6 @@
                                     <input type="text" name="name" placeholder="Agent name" required>
                                     <input type="text" name="role" placeholder="Role" required>
                                     <textarea name="description" placeholder="Description"></textarea>
-                                    <select name="model" required>
-                                        @foreach ($providers as $provider)
-                                            <option value="{{ $provider->name }}">Primary: {{ $provider->name }}</option>
-                                        @endforeach
-                                    </select>
-                                    <select name="fallback_model">
-                                        <option value="">No fallback</option>
-                                        @foreach ($providers as $provider)
-                                            <option value="{{ $provider->name }}">Fallback: {{ $provider->name }}</option>
-                                        @endforeach
-                                    </select>
                                     <input type="text" name="tools_text" placeholder="Tools, comma separated">
                                     <button type="submit">Add Agent</button>
                                 </form>
@@ -865,7 +857,7 @@
                                     </select>
                                     <input type="text" name="name" placeholder="Runtime name" required>
                                     <select name="harness" required>
-                                        @foreach (['laravel_ai', 'opencode', 'codex'] as $harness)
+                                        @foreach (['laravel_ai', 'opencode', 'claude_code', 'codex'] as $harness)
                                             <option value="{{ $harness }}">{{ $harness }}</option>
                                         @endforeach
                                     </select>
@@ -917,10 +909,6 @@
                                             <strong>{{ $agent->name }}</strong>
                                             <div class="meta">{{ $agent->role }}</div>
                                             <div class="pill-row">
-                                                <span class="pill">{{ $agent->model }}</span>
-                                                @if ($agent->fallback_model)
-                                                    <span class="pill">fallback {{ $agent->fallback_model }}</span>
-                                                @endif
                                                 <span class="pill">{{ $agent->runtimes->count() }} runtimes</span>
                                             </div>
                                         </div>
@@ -933,17 +921,6 @@
                                             <input type="text" name="name" value="{{ $agent->name }}" required>
                                             <input type="text" name="role" value="{{ $agent->role }}" required>
                                             <textarea name="description" placeholder="Description">{{ $agent->description }}</textarea>
-                                            <select name="model" required>
-                                                @foreach ($providers as $provider)
-                                                    <option value="{{ $provider->name }}" @selected($agent->model === $provider->name)>{{ $provider->name }}</option>
-                                                @endforeach
-                                            </select>
-                                            <select name="fallback_model">
-                                                <option value="">No fallback</option>
-                                                @foreach ($providers as $provider)
-                                                    <option value="{{ $provider->name }}" @selected($agent->fallback_model === $provider->name)>{{ $provider->name }}</option>
-                                                @endforeach
-                                            </select>
                                             <input type="text" name="tools_text" value="{{ implode(', ', $agent->tools ?? []) }}" placeholder="Tools, comma separated">
                                             <button class="tiny" type="submit">Save Agent</button>
                                         </form>
@@ -976,7 +953,7 @@
                                                                 @method('PATCH')
                                                                 <input type="text" name="name" value="{{ $runtime->name }}" required>
                                                                 <select name="harness" required>
-                                                                    @foreach (['laravel_ai', 'opencode', 'codex'] as $harness)
+                                                                    @foreach (['laravel_ai', 'opencode', 'claude_code', 'codex'] as $harness)
                                                                         <option value="{{ $harness }}" @selected($runtime->harness === $harness)>{{ $harness }}</option>
                                                                     @endforeach
                                                                 </select>
@@ -1087,7 +1064,7 @@
                                     </select>
                                     <input type="text" name="name" placeholder="Route name" required>
                                     <select name="harness" required>
-                                        @foreach (['laravel_ai', 'opencode', 'codex'] as $harness)
+                                        @foreach (['laravel_ai', 'opencode', 'claude_code', 'codex'] as $harness)
                                             <option value="{{ $harness }}">{{ $harness }}</option>
                                         @endforeach
                                     </select>
@@ -1217,7 +1194,7 @@
                                                                 @method('PATCH')
                                                                 <input type="text" name="name" value="{{ $route->name }}" required>
                                                                 <select name="harness" required>
-                                                                    @foreach (['laravel_ai', 'opencode', 'codex'] as $harness)
+                                                                    @foreach (['laravel_ai', 'opencode', 'claude_code', 'codex'] as $harness)
                                                                         <option value="{{ $harness }}" @selected($route->harness === $harness)>{{ $harness }}</option>
                                                                     @endforeach
                                                                 </select>

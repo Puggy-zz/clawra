@@ -31,8 +31,6 @@ class AgentFactory extends Factory
             'role' => $this->faker->jobTitle(),
             'description' => $this->faker->paragraph(),
             'status' => 'active',
-            'model' => $this->faker->randomElement(['synthetic', 'gemini']),
-            'fallback_model' => $this->faker->randomElement(['synthetic', 'gemini']),
             'tools' => [],
             'execution_preferences' => [],
         ];

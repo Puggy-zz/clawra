@@ -29,10 +29,7 @@ it('persists opencode session references and append only logs', function () {
         'name' => 'gpt-5.4',
         'external_name' => 'openai/gpt-5.4',
     ]);
-    $agent = Agent::factory()->create([
-        'name' => 'Developer',
-        'execution_preferences' => ['preferred_harness' => 'opencode'],
-    ]);
+    $agent = Agent::factory()->create(['name' => 'Developer']);
     AgentRuntime::factory()->create([
         'agent_id' => $agent->id,
         'provider_route_id' => $route->id,

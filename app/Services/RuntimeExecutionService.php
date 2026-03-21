@@ -15,6 +15,7 @@ class RuntimeExecutionService
         protected AgentService $agentService,
         protected AiService $aiService,
         protected OpenCodeRuntimeService $openCodeRuntimeService,
+        protected ClaudeCodeRuntimeService $claudeCodeRuntimeService,
         protected ProcessLogService $processLogService,
     ) {}
 
@@ -69,6 +70,7 @@ class RuntimeExecutionService
 
         $response = match ($runtime->harness) {
             'opencode' => $this->openCodeRuntimeService->execute($runtime, $prompt, $workspacePath),
+            'claude_code' => $this->claudeCodeRuntimeService->execute($runtime, $prompt, $workspacePath),
             'laravel_ai' => $this->executeLaravelAiRuntime($runtime, $prompt),
             default => [
                 'success' => false,
@@ -104,7 +106,7 @@ class RuntimeExecutionService
             task: $task,
         );
 
-        if (! $response['success'] && $runtime->fallbackRoute?->harness === 'opencode') {
+        if (! $response['success'] && in_array($runtime->fallbackRoute?->harness, ['opencode', 'claude_code'], true)) {
             $this->processLogService->log(
                 kind: 'runtime.execution.fallback',
                 status: 'retrying',
@@ -126,7 +128,10 @@ class RuntimeExecutionService
             $fallbackRuntime->setRelation('route', $runtime->fallbackRoute);
             $fallbackRuntime->setRelation('model', $runtime->fallbackModel);
 
-            $fallbackResponse = $this->openCodeRuntimeService->execute($fallbackRuntime, $prompt, $workspacePath);
+            $fallbackResponse = match ($runtime->fallbackRoute->harness) {
+                'claude_code' => $this->claudeCodeRuntimeService->execute($fallbackRuntime, $prompt, $workspacePath),
+                default => $this->openCodeRuntimeService->execute($fallbackRuntime, $prompt, $workspacePath),
+            };
             $fallbackResponse['harness'] = $runtime->fallbackRoute->harness;
             $fallbackResponse['runtime'] = $runtime->name.'-fallback';
 

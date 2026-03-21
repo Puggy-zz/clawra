@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Agents\CoordinatorAgent;
+use App\Jobs\RunHeartbeatJob;
 use App\Models\AgentRuntime;
 use App\Models\ProviderModel;
 use App\Models\ProviderRoute;
@@ -123,6 +124,37 @@ class CoordinatorController extends Controller
         return back();
     }
 
+    public function updateProject(Request $request, int $project): RedirectResponse
+    {
+        $projectModel = $this->projectService->getProjectById($project);
+
+        abort_unless($projectModel !== null, Response::HTTP_NOT_FOUND);
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'goals' => 'nullable|string',
+            'current_intent' => 'nullable|string|max:500',
+            'status' => 'required|string|in:active,paused,blocked,complete',
+            'workspace_path' => 'nullable|string|max:500',
+        ]);
+
+        $projectModel->update($validated);
+
+        return back();
+    }
+
+    public function destroyProject(int $project): RedirectResponse
+    {
+        $projectModel = $this->projectService->getProjectById($project);
+
+        abort_unless($projectModel !== null, Response::HTTP_NOT_FOUND);
+
+        $projectModel->delete();
+
+        return redirect('/');
+    }
+
     public function storeConversation(Request $request): RedirectResponse
     {
         $validated = $request->validate([
@@ -170,15 +202,20 @@ class CoordinatorController extends Controller
             'recommended_agent_id' => 'nullable|exists:agents,id',
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'priority' => 'nullable|integer|min:0|max:100',
         ]);
 
-        $this->taskService->createTaskWithWorkflow(
+        $task = $this->taskService->createTaskWithWorkflow(
             (int) $validated['project_id'],
             (int) $validated['workflow_id'],
             $validated['name'],
             $validated['description'] ?? null,
             isset($validated['recommended_agent_id']) ? (int) $validated['recommended_agent_id'] : null,
         );
+
+        if (isset($validated['priority'])) {
+            $task->update(['priority' => (int) $validated['priority']]);
+        }
 
         return back();
     }
@@ -192,7 +229,8 @@ class CoordinatorController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'status' => 'required|string|in:pending,in-progress,completed,failed',
+            'status' => 'required|string|in:pending,in-progress,completed,failed,draft',
+            'priority' => 'nullable|integer|min:0|max:100',
             'recommended_agent_id' => 'nullable|exists:agents,id',
         ]);
 
@@ -218,8 +256,6 @@ class CoordinatorController extends Controller
             'name' => 'required|string|max:255',
             'role' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'model' => 'required|string|max:255',
-            'fallback_model' => 'nullable|string|max:255',
             'tools_text' => 'nullable|string',
         ]);
 
@@ -227,8 +263,6 @@ class CoordinatorController extends Controller
             'name' => $validated['name'],
             'role' => $validated['role'],
             'description' => $validated['description'] ?? null,
-            'model' => $validated['model'],
-            'fallback_model' => $validated['fallback_model'] ?? null,
             'tools' => $this->parseList($validated['tools_text'] ?? null),
         ]);
 
@@ -245,8 +279,6 @@ class CoordinatorController extends Controller
             'name' => 'required|string|max:255',
             'role' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'model' => 'required|string|max:255',
-            'fallback_model' => 'nullable|string|max:255',
             'tools_text' => 'nullable|string',
         ]);
 
@@ -254,8 +286,6 @@ class CoordinatorController extends Controller
             'name' => $validated['name'],
             'role' => $validated['role'],
             'description' => $validated['description'] ?? null,
-            'model' => $validated['model'],
-            'fallback_model' => $validated['fallback_model'] ?? null,
             'tools' => $this->parseList($validated['tools_text'] ?? null),
         ]);
 
@@ -278,7 +308,7 @@ class CoordinatorController extends Controller
         $validated = $request->validate([
             'agent_id' => 'required|exists:agents,id',
             'name' => 'required|string|max:255',
-            'harness' => 'required|string|in:laravel_ai,opencode,codex',
+            'harness' => 'required|string|in:laravel_ai,opencode,claude_code,codex',
             'runtime_type' => 'required|string|max:255',
             'runtime_ref' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -289,8 +319,21 @@ class CoordinatorController extends Controller
             'tools_text' => 'nullable|string',
             'config_text' => 'nullable|string',
             'is_default' => 'nullable|boolean',
+            'saves_documents' => 'nullable|boolean',
             'status' => 'required|string|in:active,disabled',
         ]);
+
+        $this->assertModelBelongsToRoute(
+            (int) ($validated['provider_model_id'] ?? 0),
+            (int) ($validated['provider_route_id'] ?? 0),
+            'provider_model_id',
+        );
+
+        $this->assertModelBelongsToRoute(
+            (int) ($validated['fallback_provider_model_id'] ?? 0),
+            (int) ($validated['fallback_provider_route_id'] ?? 0),
+            'fallback_provider_model_id',
+        );
 
         if ($this->truthy($request->input('is_default'))) {
             AgentRuntime::query()
@@ -304,6 +347,7 @@ class CoordinatorController extends Controller
             'tools' => $this->parseList($validated['tools_text'] ?? null),
             'config' => $this->parseJsonObject($validated['config_text'] ?? null),
             'is_default' => $this->truthy($request->input('is_default')),
+            'saves_documents' => $this->truthy($request->input('saves_documents')),
         ]);
 
         return back();
@@ -315,7 +359,7 @@ class CoordinatorController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'harness' => 'required|string|in:laravel_ai,opencode,codex',
+            'harness' => 'required|string|in:laravel_ai,opencode,claude_code,codex',
             'runtime_type' => 'required|string|max:255',
             'runtime_ref' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -326,8 +370,21 @@ class CoordinatorController extends Controller
             'tools_text' => 'nullable|string',
             'config_text' => 'nullable|string',
             'is_default' => 'nullable|boolean',
+            'saves_documents' => 'nullable|boolean',
             'status' => 'required|string|in:active,disabled',
         ]);
+
+        $this->assertModelBelongsToRoute(
+            (int) ($validated['provider_model_id'] ?? 0),
+            (int) ($validated['provider_route_id'] ?? 0),
+            'provider_model_id',
+        );
+
+        $this->assertModelBelongsToRoute(
+            (int) ($validated['fallback_provider_model_id'] ?? 0),
+            (int) ($validated['fallback_provider_route_id'] ?? 0),
+            'fallback_provider_model_id',
+        );
 
         if ($this->truthy($request->input('is_default'))) {
             AgentRuntime::query()
@@ -342,6 +399,7 @@ class CoordinatorController extends Controller
             'tools' => $this->parseList($validated['tools_text'] ?? null),
             'config' => $this->parseJsonObject($validated['config_text'] ?? null),
             'is_default' => $this->truthy($request->input('is_default')),
+            'saves_documents' => $this->truthy($request->input('saves_documents')),
         ]);
 
         return back();
@@ -428,7 +486,7 @@ class CoordinatorController extends Controller
         $validated = $request->validate([
             'provider_id' => 'required|exists:providers,id',
             'name' => 'required|string|max:255',
-            'harness' => 'required|string|in:laravel_ai,opencode,codex',
+            'harness' => 'required|string|in:laravel_ai,opencode,claude_code,codex',
             'auth_mode' => 'required|string|in:api_key,chatgpt_oauth,provider_oauth',
             'credential_type' => 'nullable|string|max:255',
             'priority' => 'nullable|integer',
@@ -461,7 +519,7 @@ class CoordinatorController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'harness' => 'required|string|in:laravel_ai,opencode,codex',
+            'harness' => 'required|string|in:laravel_ai,opencode,claude_code,codex',
             'auth_mode' => 'required|string|in:api_key,chatgpt_oauth,provider_oauth',
             'credential_type' => 'nullable|string|max:255',
             'priority' => 'nullable|integer',
@@ -568,7 +626,7 @@ class CoordinatorController extends Controller
 
     public function runHeartbeat(): RedirectResponse
     {
-        $this->heartbeatScheduler->execute();
+        RunHeartbeatJob::dispatch('manual');
 
         return back();
     }
@@ -606,5 +664,19 @@ class CoordinatorController extends Controller
     protected function truthy(mixed $value): bool
     {
         return in_array($value, [true, 1, '1', 'on', 'true'], true);
+    }
+
+    protected function assertModelBelongsToRoute(int $modelId, int $routeId, string $field): void
+    {
+        if ($modelId === 0 || $routeId === 0) {
+            return;
+        }
+
+        $belongs = ProviderModel::query()
+            ->where('id', $modelId)
+            ->where('provider_route_id', $routeId)
+            ->exists();
+
+        abort_if(! $belongs, Response::HTTP_UNPROCESSABLE_ENTITY, "The selected {$field} does not belong to the chosen route.");
     }
 }

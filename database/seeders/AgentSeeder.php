@@ -6,173 +6,221 @@ namespace Database\Seeders;
 
 use App\Agents\CoordinatorAgent as CoordinatorRuntime;
 use App\Agents\PlannerAgent as PlannerRuntime;
+use App\Agents\ResearcherAgent as ResearcherRuntime;
+use App\Agents\ReviewerAgent as ReviewerRuntime;
 use App\Models\Agent;
 use App\Models\AgentRuntime;
-use App\Models\Provider;
 use App\Models\ProviderModel;
 use App\Models\ProviderRoute;
-use App\Services\ResearchService;
 use Illuminate\Database\Seeder;
 
+/**
+ * Seeds the agent roster per PRD §5.3.
+ *
+ * Each agent is assigned a distinct primary model to avoid synthetic.new
+ * concurrency conflicts (1 concurrent call per model per pack).
+ *
+ * | Agent                      | Primary model         | Route                    | Fallback                       |
+ * |----------------------------|-----------------------|--------------------------|--------------------------------|
+ * | Coordinator                | deepseek-v3           | synthetic-laravel-ai     | gemini-3.1-flash-lite-preview  |
+ * | Planner                    | kimi-k2-thinking      | synthetic-laravel-ai     | deepseek-v3 (synth)            |
+ * | Researcher                 | deepseek-v3           | synthetic-laravel-ai     | gemini-3.1-flash-lite-preview  |
+ * | Reviewer                   | qwen3-coder           | synthetic-laravel-ai     | deepseek-r1 (synth)            |
+ * | Developer (primary)        | qwen3-coder           | synthetic-opencode       | glm-4.7-flash (synth)          |
+ * | Developer (claude-code)    | claude-sonnet-4-6     | anthropic-claude-code    | qwen3-coder (synthetic-opencode) |
+ * | Test Writer (primary)      | glm-4.7-flash         | synthetic-opencode       | qwen3-coder (synth)            |
+ * | Test Writer (claude-code)  | claude-sonnet-4-6     | anthropic-claude-code    | glm-4.7-flash (synthetic-opencode) |
+ *
+ * Researcher shares deepseek-v3 with Coordinator because the Researcher
+ * primarily uses the /search endpoint (no model concurrency impact) and only
+ * calls the model for summarisation — unlikely to conflict in practice.
+ */
 class AgentSeeder extends Seeder
 {
     public function run(): void
     {
-        // Setup synthetic-native provider with research capabilities
-        $synthetic = Provider::query()->updateOrCreate(
-            ['name' => 'synthetic-native'],
-            [
-                'name' => 'synthetic-native',
-                'type' => 'api-key-based',
-                'api_protocol' => 'native',
-                'status' => 'active',
-                'usage_snapshot' => [
-                    'total_requests' => 0,
-                    'requests_this_window' => 0,
-                    'concurrent_calls' => 0,
-                    'last_reset' => now()->toIso8601String(),
-                ],
-                'rate_limits' => [
-                    'requests_per_5hour_window' => 135,
-                ],
-                'priority_preferences' => [
-                    'reasoning' => 99,
-                    'web-search' => 85,
-                    'code-generation' => 80,
-                    'summarization' => 95,
-                    'json-schema' => 85,
-                    'embeddings' => 50,
-                ],
-            ]
-        );
-
-        // Ensure synthetic-laravel-ai route exists for this provider
-        $syntheticRoute = ProviderRoute::query()->where('name', 'synthetic-laravel-ai')->first();
-
-        // Create NVIDIA Nemotron model for deep research
-        $nemotron = ProviderModel::query()->updateOrCreate(
-            ['name' => 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4'],
-            [
-                'provider_route_id' => $syntheticRoute->id,
-                'name' => 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4',
-                'external_name' => 'NVIDIA Nemotron 3-Super 120B',
-                'config' => [
-                    'metadata' => [
-                        'parameters' => 120_000_000_000,
-                        'context_window' => 256_000,
-                        'finish_reasons' => ['STOP', 'LENGTH', 'ERROR'],
-                        'license' => 'proprietary',
-                    ],
-                ],
-                'capabilities' => [
-                    'reasoning' => true,
-                    'web-search' => true,
-                    'json-schema' => true,
-                    'code-generation' => true,
-                    'summarization' => true,
-                ],
-                'context_window' => 256_000,
-                'is_default' => true,
-                'status' => 'active',
-            ]
-        );
-
+        // ── Coordinator (Clawra) ──────────────────────────────────────
         $clawra = Agent::query()->updateOrCreate(
             ['name' => 'Clawra'],
             [
                 'role' => 'Coordinator',
-                'description' => 'Routes requests, persists state, and manages Phase 0 orchestration.',
+                'description' => 'Routes requests, decomposes tasks, maintains project state, and manages inference-aware scheduling.',
                 'status' => 'active',
-                'model' => 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4',
-                'fallback_model' => 'gemini',
                 'tools' => ['coordination', 'project_state', 'provider_registry'],
-                'execution_preferences' => ['preferred_harness' => 'laravel_ai'],
             ]
         );
 
-        $researcher = Agent::query()->updateOrCreate(
-            ['name' => 'Researcher'],
-            [
-                'role' => 'Deep Research Specialist',
-                'description' => 'Performs comprehensive multi-source web research using synthetic search and tracks token usage for 256k context window.',
-                'status' => 'active',
-                'model' => 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4',
-                'fallback_model' => 'gemini',
-                'tools' => ['web_search', 'compound_search', 'summarization', 'string_research'],
-                'execution_preferences' => ['preferred_harness' => 'laravel_ai'],
-            ]
+        $this->seedRuntime(
+            agent: $clawra,
+            harness: 'laravel_ai',
+            name: 'coordinator-primary',
+            runtimeType: 'laravel_class',
+            runtimeRef: CoordinatorRuntime::class,
+            routeName: 'synthetic-laravel-ai',
+            modelName: 'deepseek-v3',
+            fallbackRouteName: 'gemini-laravel-ai',
+            fallbackModelName: 'gemini-3.1-flash-lite-preview',
+            isDefault: true,
+            tools: ['coordination', 'project_state', 'provider_registry'],
         );
 
-        $developer = Agent::query()->updateOrCreate(
-            ['name' => 'Developer'],
-            [
-                'role' => 'Code Implementation Specialist',
-                'description' => 'Reserved for Phase 1 sandbox execution.',
-                'status' => 'active',
-                'model' => 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4',
-                'fallback_model' => 'gemini',
-                'tools' => ['code_editor', 'terminal'],
-                'execution_preferences' => ['preferred_harness' => 'laravel_ai'],
-            ]
-        );
-
-        $reviewer = Agent::query()->updateOrCreate(
-            ['name' => 'Reviewer'],
-            [
-                'role' => 'Quality Assurance Specialist',
-                'description' => 'Reserved for review workflows.',
-                'status' => 'active',
-                'model' => 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4',
-                'fallback_model' => 'gemini',
-                'tools' => ['review'],
-                'execution_preferences' => ['preferred_harness' => 'laravel_ai'],
-            ]
-        );
-
+        // ── Planner ───────────────────────────────────────────────────
         $planner = Agent::query()->updateOrCreate(
             ['name' => 'Planner'],
             [
-                'role' => 'Task Planning Specialist',
-                'description' => 'Builds project plans and task breakdowns.',
+                'role' => 'Planner',
+                'description' => 'Project breakdown, spec writing, and implementation plan generation.',
                 'status' => 'active',
-                'model' => 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4',
-                'fallback_model' => 'gemini',
                 'tools' => ['task_planning', 'project_breakdown'],
-                'execution_preferences' => ['preferred_harness' => 'laravel_ai'],
             ]
         );
 
+        $this->seedRuntime(
+            agent: $planner,
+            harness: 'laravel_ai',
+            name: 'planner-primary',
+            runtimeType: 'laravel_class',
+            runtimeRef: PlannerRuntime::class,
+            routeName: 'synthetic-laravel-ai',
+            modelName: 'kimi-k2-thinking',
+            fallbackRouteName: 'synthetic-laravel-ai',
+            fallbackModelName: 'deepseek-v3',
+            isDefault: true,
+            tools: ['task_planning', 'project_breakdown'],
+        );
+
+        // ── Researcher ────────────────────────────────────────────────
+        // Primary work is via synthetic.new /search endpoint (no model concurrency impact).
+        // DeepSeek-V3-0324 is used for summarisation only — unlikely to conflict with Coordinator.
+        $researcher = Agent::query()->updateOrCreate(
+            ['name' => 'Researcher'],
+            [
+                'role' => 'Researcher',
+                'description' => 'Web search, summarisation, and fact-finding via synthetic.new /search.',
+                'status' => 'active',
+                'tools' => ['web_search', 'summarisation'],
+            ]
+        );
+
+        $this->seedRuntime(
+            agent: $researcher,
+            harness: 'laravel_ai',
+            name: 'researcher-primary',
+            runtimeType: 'laravel_class',
+            runtimeRef: ResearcherRuntime::class,
+            routeName: 'synthetic-laravel-ai',
+            modelName: 'deepseek-v3',
+            fallbackRouteName: 'gemini-laravel-ai',
+            fallbackModelName: 'gemini-3.1-flash-lite-preview',
+            isDefault: true,
+            tools: ['web_search', 'summarisation'],
+        );
+
+        // ── Reviewer ──────────────────────────────────────────────────
+        $reviewer = Agent::query()->updateOrCreate(
+            ['name' => 'Reviewer'],
+            [
+                'role' => 'Reviewer',
+                'description' => 'Code review, test validation, and spec compliance checks. Approves, requests changes, or escalates.',
+                'status' => 'active',
+                'tools' => ['code_review', 'test_runner'],
+            ]
+        );
+
+        $this->seedRuntime(
+            agent: $reviewer,
+            harness: 'laravel_ai',
+            name: 'reviewer-primary',
+            runtimeType: 'laravel_class',
+            runtimeRef: ReviewerRuntime::class,
+            routeName: 'synthetic-laravel-ai',
+            modelName: 'qwen3-coder',
+            fallbackRouteName: 'synthetic-laravel-ai',
+            fallbackModelName: 'deepseek-r1',
+            isDefault: true,
+            tools: ['code_review', 'test_runner'],
+        );
+
+        // ── Developer ─────────────────────────────────────────────────
+        // Runs inside Docker Sandbox via opencode. Model-agnostic — opencode handles
+        // model selection. Claude Max (Anthropic) is the primary; ChatGPT Plus (OpenAI) fallback.
+        $developer = Agent::query()->updateOrCreate(
+            ['name' => 'Developer'],
+            [
+                'role' => 'Developer',
+                'description' => 'Code generation via opencode inside Docker Sandbox. Implements until tests pass.',
+                'status' => 'active',
+                'tools' => ['code_editor', 'terminal', 'test_runner'],
+            ]
+        );
+
+        $this->seedRuntime(
+            agent: $developer,
+            harness: 'opencode',
+            name: 'developer-primary',
+            runtimeType: 'opencode_agent',
+            runtimeRef: 'build',
+            routeName: 'synthetic-opencode',
+            modelName: 'qwen3-coder',
+            fallbackRouteName: 'synthetic-opencode',
+            fallbackModelName: 'glm-4.7-flash',
+            isDefault: true,
+            tools: ['code_editor', 'terminal', 'test_runner'],
+        );
+
+        $this->seedRuntime(
+            agent: $developer,
+            harness: 'claude_code',
+            name: 'developer-claude-code',
+            runtimeType: 'claude_code_agent',
+            runtimeRef: 'claude-code-runner',
+            routeName: 'anthropic-claude-code',
+            modelName: 'claude-sonnet-4-6',
+            fallbackRouteName: 'synthetic-opencode',
+            fallbackModelName: 'qwen3-coder',
+            isDefault: false,
+            tools: ['code_editor', 'terminal', 'test_runner'],
+        );
+
+        // ── Test Writer ───────────────────────────────────────────────
+        // Runs inside Docker Sandbox via opencode. Writes failing Pest tests before implementation.
         $testWriter = Agent::query()->updateOrCreate(
             ['name' => 'Test Writer'],
             [
-                'role' => 'Test Authoring Specialist',
-                'description' => 'Reserved for TDD workflows in Phase 1.',
+                'role' => 'Test Writer',
+                'description' => 'Writes failing Pest tests against spec and acceptance criteria. Phase 1 TDD workflow.',
                 'status' => 'active',
-                'model' => 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4',
-                'fallback_model' => 'gemini',
-                'tools' => ['testing'],
-                'execution_preferences' => ['preferred_harness' => 'laravel_ai'],
+                'tools' => ['code_editor', 'test_runner'],
             ]
         );
 
-        $this->seedRuntime($clawra, 'laravel_ai', 'primary', 'laravel_class', CoordinatorRuntime::class, 'synthetic-laravel-ai', 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4', 'gemini-laravel-ai', 'gemini-2.5-pro', true, ['coordination', 'project_state', 'provider_registry']);
-        $this->seedRuntime($clawra, 'opencode', 'concierge', 'opencode_agent', 'general', 'openai-opencode-chatgpt', 'gpt-5.4', 'synthetic-opencode', 'deepseek-v3', false, ['chat', 'coordination']);
+        $this->seedRuntime(
+            agent: $testWriter,
+            harness: 'opencode',
+            name: 'test-writer-primary',
+            runtimeType: 'opencode_agent',
+            runtimeRef: 'build',
+            routeName: 'synthetic-opencode',
+            modelName: 'glm-4.7-flash',
+            fallbackRouteName: 'synthetic-opencode',
+            fallbackModelName: 'qwen3-coder',
+            isDefault: true,
+            tools: ['code_editor', 'test_runner'],
+        );
 
-        $this->seedRuntime($planner, 'laravel_ai', 'planner-core', 'laravel_class', PlannerRuntime::class, 'synthetic-laravel-ai', 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4', 'gemini-laravel-ai', 'gemini-2.5-pro', true, ['task_planning', 'project_breakdown']);
-        $this->seedRuntime($planner, 'opencode', 'planner-sidecar', 'opencode_agent', 'plan', 'openai-opencode-chatgpt', 'gpt-5.4', 'synthetic-opencode', 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4', false, ['task_planning']);
-
-        $this->seedRuntime($researcher, 'laravel_ai', 'research-core', 'laravel_class', ResearchService::class, 'synthetic-laravel-ai', 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4', 'gemini-laravel-ai', 'gemini-2.5-pro', true, ['web_search', 'compound_search', 'summarization', 'string_research']);
-        $this->seedRuntime($researcher, 'opencode', 'research-sidecar', 'opencode_agent', 'explore', 'synthetic-opencode', 'deepseek-v3', 'synthetic-opencode', 'gemini-2.5-pro', false, ['web_search']);
-
-        $this->seedRuntime($developer, 'laravel_ai', 'api-core', 'laravel_class', ResearchService::class, 'synthetic-laravel-ai', 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4', 'genius-laravel-ai', 'gemini-2.5-pro', true, ['code_editor', 'terminal']);
-        $this->seedRuntime($developer, 'opencode', 'builder', 'opencode_agent', 'build', 'openai-opencode-chatgpt', 'gpt-5.4', 'synthetic-opencode', 'deepseek-v3', false, ['code_editor', 'terminal']);
-        $this->seedRuntime($developer, 'opencode', 'hack', 'opencode_agent', 'general', 'openai-opencode-chatgpt', 'gpt-5.4', 'synthetic-opencode', 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4', false, ['code_editor', 'terminal']);
-
-        $this->seedRuntime($reviewer, 'laravel_ai', 'review-core', 'laravel_class', ResearchService::class, 'synthetic-laravel-ai', 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4', 'gemini-laravel-ai', 'gemini-2.5-pro', true, ['review']);
-        $this->seedRuntime($reviewer, 'opencode', 'reviewer', 'opencode_agent', 'general', 'openai-opencode-chatgpt', 'gpt-5.4', 'synthetic-opencode', 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4', true, ['review']);
-
-        $this->seedRuntime($testWriter, 'laravel_ai', 'test-core', 'laravel_class', ResearchService::class, 'synthetic-laravel-ai', 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4', 'gemini-laravel-ai', 'gemini-2.5-pro', true, ['testing']);
-        $this->seedRuntime($testWriter, 'opencode', 'test-writer', 'opencode_agent', 'build', 'openai-opencode-chatgpt', 'gpt-5.4', 'synthetic-opencode', 'hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4', false, ['testing']);
+        $this->seedRuntime(
+            agent: $testWriter,
+            harness: 'claude_code',
+            name: 'test-writer-claude-code',
+            runtimeType: 'claude_code_agent',
+            runtimeRef: 'claude-code-runner',
+            routeName: 'anthropic-claude-code',
+            modelName: 'claude-sonnet-4-6',
+            fallbackRouteName: 'synthetic-opencode',
+            fallbackModelName: 'glm-4.7-flash',
+            isDefault: false,
+            tools: ['code_editor', 'test_runner'],
+        );
     }
 
     protected function seedRuntime(
@@ -189,21 +237,17 @@ class AgentSeeder extends Seeder
         array $tools,
     ): AgentRuntime {
         $route = $routeName ? ProviderRoute::query()->where('name', $routeName)->first() : null;
-        $model = $route && $modelName
+        $model = ($route && $modelName)
             ? ProviderModel::query()->where('provider_route_id', $route->id)->where('name', $modelName)->first()
             : null;
 
         $fallbackRoute = $fallbackRouteName ? ProviderRoute::query()->where('name', $fallbackRouteName)->first() : null;
-        $fallbackModel = $fallbackRoute && $fallbackModelName
+        $fallbackModel = ($fallbackRoute && $fallbackModelName)
             ? ProviderModel::query()->where('provider_route_id', $fallbackRoute->id)->where('name', $fallbackModelName)->first()
             : null;
 
         return AgentRuntime::query()->updateOrCreate(
-            [
-                'agent_id' => $agent->id,
-                'harness' => $harness,
-                'name' => $name,
-            ],
+            ['agent_id' => $agent->id, 'harness' => $harness, 'name' => $name],
             [
                 'provider_route_id' => $route?->id,
                 'provider_model_id' => $model?->id,

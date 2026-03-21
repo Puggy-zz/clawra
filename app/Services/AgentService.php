@@ -39,19 +39,6 @@ class AgentService
         return $this->query()->find($id);
     }
 
-    /**
-     * @return array{model: string, fallback_model: ?string}
-     */
-    public function getModelsForAgent(string $name, string $defaultModel, ?string $defaultFallback = null): array
-    {
-        $agent = $this->getAgentByName($name);
-
-        return [
-            'model' => $agent?->model ?: $defaultModel,
-            'fallback_model' => $agent?->fallback_model ?: $defaultFallback,
-        ];
-    }
-
     public function getRuntimeForAgent(string $name, string $harness = 'laravel_ai'): ?AgentRuntime
     {
         $agent = $this->getAgentByName($name);
@@ -75,22 +62,8 @@ class AgentService
             return null;
         }
 
-        $preferredHarness = $agent->execution_preferences['preferred_harness'] ?? null;
-
-        $runtimes = $agent->runtimes->where('status', 'active');
-
-        if (is_string($preferredHarness) && $preferredHarness !== '') {
-            $preferred = $runtimes
-                ->where('harness', $preferredHarness)
-                ->sortByDesc('is_default')
-                ->first();
-
-            if ($preferred instanceof AgentRuntime) {
-                return $preferred;
-            }
-        }
-
-        return $runtimes
+        return $agent->runtimes
+            ->where('status', 'active')
             ->sortByDesc('is_default')
             ->first();
     }

@@ -69,16 +69,12 @@ it('can update an agent from the coordinator interface', function () {
         'name' => 'Planner',
         'role' => 'Task Planning Specialist',
         'description' => 'Updated planner configuration.',
-        'model' => 'gemini',
-        'fallback_model' => 'synthetic',
         'tools_text' => 'task_planning, estimation',
     ])->assertRedirect('/coordinator');
 
     $freshAgent = $agent->fresh();
 
-    expect($freshAgent?->model)->toBe('gemini')
-        ->and($freshAgent?->fallback_model)->toBe('synthetic')
-        ->and($freshAgent?->description)->toBe('Updated planner configuration.')
+    expect($freshAgent?->description)->toBe('Updated planner configuration.')
         ->and($freshAgent?->tools)->toBe(['task_planning', 'estimation']);
 });
 

@@ -23,8 +23,6 @@ class Agent extends Model
         'role',
         'description',
         'status',
-        'model',
-        'fallback_model',
         'tools',
         'execution_preferences',
     ];
