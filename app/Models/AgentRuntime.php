@@ -31,6 +31,7 @@ class AgentRuntime extends Model
         'config',
         'is_default',
         'saves_documents',
+        'sandboxed',
         'status',
     ];
 
@@ -41,6 +42,7 @@ class AgentRuntime extends Model
             'config' => 'array',
             'is_default' => 'bool',
             'saves_documents' => 'bool',
+            'sandboxed' => 'bool',
         ];
     }
 

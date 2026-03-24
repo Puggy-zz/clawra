@@ -16,6 +16,7 @@ class RuntimeExecutionService
         protected AiService $aiService,
         protected OpenCodeRuntimeService $openCodeRuntimeService,
         protected ClaudeCodeRuntimeService $claudeCodeRuntimeService,
+        protected SandboxedExecutionService $sandboxedExecutionService,
         protected ProcessLogService $processLogService,
     ) {}
 
@@ -68,17 +69,21 @@ class RuntimeExecutionService
             task: $task,
         );
 
-        $response = match ($runtime->harness) {
-            'opencode' => $this->openCodeRuntimeService->execute($runtime, $prompt, $workspacePath),
-            'claude_code' => $this->claudeCodeRuntimeService->execute($runtime, $prompt, $workspacePath),
-            'laravel_ai' => $this->executeLaravelAiRuntime($runtime, $prompt),
-            default => [
-                'success' => false,
-                'text' => '',
-                'status' => 'failed',
-                'error' => sprintf('Harness [%s] is not implemented yet.', $runtime->harness),
-            ],
-        };
+        if ($runtime->sandboxed) {
+            $response = $this->sandboxedExecutionService->execute($runtime, $prompt, $workspacePath, $task);
+        } else {
+            $response = match ($runtime->harness) {
+                'opencode' => $this->openCodeRuntimeService->execute($runtime, $prompt, $workspacePath),
+                'claude_code' => $this->claudeCodeRuntimeService->execute($runtime, $prompt, $workspacePath),
+                'laravel_ai' => $this->executeLaravelAiRuntime($runtime, $prompt),
+                default => [
+                    'success' => false,
+                    'text' => '',
+                    'status' => 'failed',
+                    'error' => sprintf('Harness [%s] is not implemented yet.', $runtime->harness),
+                ],
+            };
+        }
 
         $response['harness'] = $runtime->harness;
         $response['runtime'] = $runtime->name;

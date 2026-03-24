@@ -161,7 +161,7 @@ class ProviderSeeder extends Seeder
 
         $this->upsertModel($openAiOpenCodeRoute, 'gpt-5.3-codex', 'openai/gpt-5.3-codex', ['code-generation', 'reasoning'], false, 6, 128000);
         $this->upsertModel($openAiOpenCodeRoute, 'gpt-5.4', 'openai/gpt-5.4', ['chat', 'code-generation', 'reasoning'], false, 8, 128000);
-        $this->upsertModel($openAiOpenCodeRoute, 'gpt-5-codex-mini', 'openai/gpt-5-codex-mini', ['code-generation'], false, 15, 128000);
+        $this->upsertModel($openAiOpenCodeRoute, 'gpt-5.1-codex-mini', 'openai/gpt-5.1-codex-mini', ['code-generation'], false, 15, 128000);
 
         // OpenAI direct API (pay-per-token — disabled by default, available if needed)
         $this->upsertRoute($openAi, 'openai-laravel-ai', 'laravel_ai', 'api_key', [

@@ -29,7 +29,7 @@
 
                 @if ($showCreateForm && $projects->isNotEmpty() && $workflows->isNotEmpty())
                     <div class="inline-form open" style="border-bottom:1px solid var(--border);">
-                        <form method="POST" action="/coordinator/tasks">
+                        <form method="POST" action="/admin/tasks">
                             @csrf
                             <div class="form-grid">
                                 <div class="form-grid-2">
@@ -113,7 +113,7 @@
                                 </div>
                             </div>
                             <div class="task-actions" wire:click.stop>
-                                <form method="POST" action="/coordinator/tasks/{{ $task->id }}">
+                                <form method="POST" action="/admin/tasks/{{ $task->id }}">
                                     @csrf
                                     @method('PATCH')
                                     <input type="hidden" name="name" value="{{ $task->name }}">
@@ -125,7 +125,7 @@
                                         @endforeach
                                     </select>
                                 </form>
-                                <form method="POST" action="/coordinator/tasks/{{ $task->id }}" onsubmit="return confirm('Delete task?')">
+                                <form method="POST" action="/admin/tasks/{{ $task->id }}" onsubmit="return confirm('Delete task?')">
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="btn btn-icon btn-danger" title="Delete task">×</button>
@@ -295,7 +295,7 @@
 
         @if ($showCreateForm && $projects->isNotEmpty() && $workflows->isNotEmpty())
             <div class="inline-form open">
-                <form method="POST" action="/coordinator/tasks">
+                <form method="POST" action="/admin/tasks">
                     @csrf
                     <div class="form-grid">
                         <div class="form-grid-2">
@@ -391,7 +391,7 @@
                         </div>
                     </div>
                     <div class="task-actions" wire:click.stop>
-                        <form method="POST" action="/coordinator/tasks/{{ $task->id }}">
+                        <form method="POST" action="/admin/tasks/{{ $task->id }}">
                             @csrf
                             @method('PATCH')
                             <input type="hidden" name="name" value="{{ $task->name }}">
@@ -403,7 +403,7 @@
                                 @endforeach
                             </select>
                         </form>
-                        <form method="POST" action="/coordinator/tasks/{{ $task->id }}" onsubmit="return confirm('Delete task?')">
+                        <form method="POST" action="/admin/tasks/{{ $task->id }}" onsubmit="return confirm('Delete task?')">
                             @csrf
                             @method('DELETE')
                             <button type="submit" class="btn btn-icon btn-danger" title="Delete task">×</button>

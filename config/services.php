@@ -47,6 +47,12 @@ return [
         'timeout' => (int) env('CLAUDE_CODE_TIMEOUT', 300),
     ],
 
+    'docker_sandbox' => [
+        'binary' => env('DOCKER_SANDBOX_BINARY', 'docker'),
+        'image' => env('DOCKER_SANDBOX_IMAGE', 'clawra-sandbox:latest'),
+        'timeout' => (int) env('DOCKER_SANDBOX_TIMEOUT', 600),
+    ],
+
     'clawra' => [
         'agent_timeout' => (int) env('CLAWRA_AGENT_TIMEOUT', 300),
         'search_timeout' => (int) env('CLAWRA_SEARCH_TIMEOUT', 30),

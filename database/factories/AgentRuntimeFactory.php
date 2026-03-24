@@ -37,6 +37,8 @@ class AgentRuntimeFactory extends Factory
             'tools' => ['chat'],
             'config' => [],
             'is_default' => true,
+            'saves_documents' => false,
+            'sandboxed' => false,
             'status' => 'active',
         ];
     }

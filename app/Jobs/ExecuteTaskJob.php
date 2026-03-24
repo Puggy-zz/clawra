@@ -6,9 +6,11 @@ namespace App\Jobs;
 
 use App\Agents\ReviewerAgent;
 use App\Models\Document;
+use App\Models\Sandbox;
 use App\Models\Task;
 use App\Services\ProcessLogService;
 use App\Services\RuntimeExecutionService;
+use App\Services\SandboxManagerService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\File;
@@ -19,13 +21,16 @@ class ExecuteTaskJob implements ShouldQueue
 {
     use Queueable;
 
-    public int $timeout = 300;
+    public int $timeout = 3600;
 
     public int $tries = 1;
 
-    public function __construct(public readonly int $taskId) {}
+    public function __construct(public readonly int $taskId)
+    {
+        $this->onQueue('low');
+    }
 
-    public function handle(RuntimeExecutionService $executor, ProcessLogService $log, ReviewerAgent $reviewer): void
+    public function handle(RuntimeExecutionService $executor, ProcessLogService $log, ReviewerAgent $reviewer, SandboxManagerService $sandboxManager): void
     {
         $task = Task::query()
             ->with(['project', 'recommendedAgent.defaultRuntime'])
@@ -102,6 +107,24 @@ class ExecuteTaskJob implements ShouldQueue
                 task: $task,
                 agent: $task->recommendedAgent,
             );
+        } finally {
+            $this->cleanupSandbox($task, $sandboxManager);
+        }
+    }
+
+    protected function cleanupSandbox(Task $task, SandboxManagerService $sandboxManager): void
+    {
+        try {
+            $sandbox = Sandbox::query()
+                ->where('task_id', $task->id)
+                ->whereIn('status', ['active', 'failed'])
+                ->first();
+
+            if ($sandbox instanceof Sandbox) {
+                $sandboxManager->remove($sandbox);
+            }
+        } catch (Throwable) {
+            // Non-fatal — sandbox cleanup failure must not obscure task result
         }
     }
 

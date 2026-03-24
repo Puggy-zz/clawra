@@ -25,6 +25,7 @@ class Project extends Model
         'state_document',
         'current_intent',
         'workspace_path',
+        'git_remote_url',
     ];
 
     /**

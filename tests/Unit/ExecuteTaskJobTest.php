@@ -15,6 +15,7 @@ use App\Models\Task;
 use App\Models\Workflow;
 use App\Services\ProcessLogService;
 use App\Services\RuntimeExecutionService;
+use App\Services\SandboxManagerService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(Tests\TestCase::class, RefreshDatabase::class);
@@ -68,11 +69,19 @@ function noopReviewer(): ReviewerAgent
     return $reviewer;
 }
 
+function noopSandboxManager(): SandboxManagerService
+{
+    $manager = Mockery::mock(SandboxManagerService::class);
+    $manager->allows('remove');
+
+    return $manager;
+}
+
 it('can be instantiated with a task id', function () {
     $job = new ExecuteTaskJob(42);
 
     expect($job->taskId)->toBe(42)
-        ->and($job->timeout)->toBe(300)
+        ->and($job->timeout)->toBe(3600)
         ->and($job->tries)->toBe(1);
 });
 
@@ -81,7 +90,7 @@ it('bails silently when task is not found', function () {
     $executor->shouldNotReceive('executeAgent');
 
     $job = new ExecuteTaskJob(99999);
-    $job->handle($executor, app(ProcessLogService::class), noopReviewer());
+    $job->handle($executor, app(ProcessLogService::class), noopReviewer(), noopSandboxManager());
 });
 
 it('bails silently when task is not in-progress', function () {
@@ -97,7 +106,7 @@ it('bails silently when task is not in-progress', function () {
     $executor->shouldNotReceive('executeAgent');
 
     $job = new ExecuteTaskJob($task->id);
-    $job->handle($executor, app(ProcessLogService::class), noopReviewer());
+    $job->handle($executor, app(ProcessLogService::class), noopReviewer(), noopSandboxManager());
 
     expect($task->refresh()->status)->toBe('pending');
 });
@@ -108,11 +117,11 @@ it('marks task completed on successful laravel_ai execution without reviewer', f
     $executor = Mockery::mock(RuntimeExecutionService::class);
     $executor->shouldReceive('executeAgent')
         ->once()
-        ->with($agent->name, Mockery::type('string'), null)
+        ->with($agent->name, Mockery::type('string'), null, Mockery::any())
         ->andReturn(['success' => true, 'text' => 'Done.', 'status' => 'completed', 'harness' => 'laravel_ai']);
 
     $job = new ExecuteTaskJob($task->id);
-    $job->handle($executor, app(ProcessLogService::class), noopReviewer());
+    $job->handle($executor, app(ProcessLogService::class), noopReviewer(), noopSandboxManager());
 
     $task->refresh();
     expect($task->status)->toBe('completed')
@@ -135,7 +144,7 @@ it('marks task completed after opencode run when reviewer approves', function ()
         ->andReturn(['decision' => 'completed', 'reasoning' => 'Task done.']);
 
     $job = new ExecuteTaskJob($task->id);
-    $job->handle($executor, app(ProcessLogService::class), $reviewer);
+    $job->handle($executor, app(ProcessLogService::class), $reviewer, noopSandboxManager());
 
     $task->refresh();
     expect($task->status)->toBe('completed');
@@ -157,7 +166,7 @@ it('marks task failed after opencode run when reviewer says incomplete', functio
         ->andReturn(['decision' => 'incomplete', 'reasoning' => 'Missing implementation.']);
 
     $job = new ExecuteTaskJob($task->id);
-    $job->handle($executor, app(ProcessLogService::class), $reviewer);
+    $job->handle($executor, app(ProcessLogService::class), $reviewer, noopSandboxManager());
 
     $task->refresh();
     expect($task->status)->toBe('failed');
@@ -179,7 +188,7 @@ it('marks task failed after opencode run when reviewer says failed', function ()
         ->andReturn(['decision' => 'failed', 'reasoning' => 'Build broke.']);
 
     $job = new ExecuteTaskJob($task->id);
-    $job->handle($executor, app(ProcessLogService::class), $reviewer);
+    $job->handle($executor, app(ProcessLogService::class), $reviewer, noopSandboxManager());
 
     $task->refresh();
     expect($task->status)->toBe('failed');
@@ -194,7 +203,7 @@ it('marks task failed on unsuccessful execution', function () {
         ->andReturn(['success' => false, 'text' => '', 'status' => 'failed', 'error' => 'Provider unreachable', 'harness' => 'laravel_ai']);
 
     $job = new ExecuteTaskJob($task->id);
-    $job->handle($executor, app(ProcessLogService::class), noopReviewer());
+    $job->handle($executor, app(ProcessLogService::class), noopReviewer(), noopSandboxManager());
 
     $task->refresh();
     expect($task->status)->toBe('failed')
@@ -213,7 +222,7 @@ it('marks task failed and logs on thrown exception', function () {
         ->andThrow(new RuntimeException('Connection timeout'));
 
     $job = new ExecuteTaskJob($task->id);
-    $job->handle($executor, app(ProcessLogService::class), noopReviewer());
+    $job->handle($executor, app(ProcessLogService::class), noopReviewer(), noopSandboxManager());
 
     $task->refresh();
     expect($task->status)->toBe('failed')
@@ -237,11 +246,11 @@ it('infers Researcher agent from task name containing research keyword', functio
     $executor = Mockery::mock(RuntimeExecutionService::class);
     $executor->shouldReceive('executeAgent')
         ->once()
-        ->with('Researcher', Mockery::type('string'), null)
+        ->with('Researcher', Mockery::type('string'), null, Mockery::any())
         ->andReturn(['success' => true, 'text' => 'Done.', 'status' => 'completed', 'harness' => 'laravel_ai']);
 
     $job = new ExecuteTaskJob($task->id);
-    $job->handle($executor, app(ProcessLogService::class), noopReviewer());
+    $job->handle($executor, app(ProcessLogService::class), noopReviewer(), noopSandboxManager());
 });
 
 it('infers Planner agent from task name containing plan keyword', function () {
@@ -259,11 +268,11 @@ it('infers Planner agent from task name containing plan keyword', function () {
     $executor = Mockery::mock(RuntimeExecutionService::class);
     $executor->shouldReceive('executeAgent')
         ->once()
-        ->with('Planner', Mockery::type('string'), null)
+        ->with('Planner', Mockery::type('string'), null, Mockery::any())
         ->andReturn(['success' => true, 'text' => 'Done.', 'status' => 'completed', 'harness' => 'laravel_ai']);
 
     $job = new ExecuteTaskJob($task->id);
-    $job->handle($executor, app(ProcessLogService::class), noopReviewer());
+    $job->handle($executor, app(ProcessLogService::class), noopReviewer(), noopSandboxManager());
 });
 
 it('defaults to Planner agent when no keyword matches', function () {
@@ -281,9 +290,9 @@ it('defaults to Planner agent when no keyword matches', function () {
     $executor = Mockery::mock(RuntimeExecutionService::class);
     $executor->shouldReceive('executeAgent')
         ->once()
-        ->with('Planner', Mockery::type('string'), null)
+        ->with('Planner', Mockery::type('string'), null, Mockery::any())
         ->andReturn(['success' => true, 'text' => 'Done.', 'status' => 'completed', 'harness' => 'laravel_ai']);
 
     $job = new ExecuteTaskJob($task->id);
-    $job->handle($executor, app(ProcessLogService::class), noopReviewer());
+    $job->handle($executor, app(ProcessLogService::class), noopReviewer(), noopSandboxManager());
 });

@@ -83,3 +83,15 @@ You can manually update the AI file tree and refresh the related guidelines with
 ```bash
 php artisan clawra:update-file-tree
 ```
+
+
+## Docker sandbox Oauth setup commands
+docker sandbox create --name clawra-setup -t clawra-sandbox:latest shell C:\Users\matth\AppData\Local\Temp
+  docker sandbox exec --interactive --tty clawra-setup bash
+
+  Then inside:
+  claude login
+
+  Then exit and save:
+  docker sandbox save clawra-setup clawra-sandbox:latest
+  docker sandbox rm clawra-setup

@@ -832,7 +832,7 @@
             <p>Personal AI Orchestration</p>
         </div>
         <div class="header-actions">
-            <form method="POST" action="/coordinator/heartbeat" style="margin:0">
+            <form method="POST" action="/admin/heartbeat" style="margin:0">
                 @csrf
                 <button type="submit" class="btn btn-ghost">↺ Run Heartbeat</button>
             </form>
@@ -862,7 +862,7 @@
 
                 {{-- New project form --}}
                 <div class="inline-form" id="new-project-form">
-                    <form method="POST" action="/coordinator/projects">
+                    <form method="POST" action="/admin/projects">
                         @csrf
                         <div class="form-grid">
                             <div class="form-grid-2">
@@ -935,7 +935,7 @@
                                     <div style="display:flex; align-items:center; gap:6px;">
                                         <a href="/coordinator?project_id={{ $project->id }}" class="link-accent">Open →</a>
                                         <button type="button" class="btn btn-xs btn-ghost" onclick="toggleProjectEdit({{ $project->id }})">Edit</button>
-                                        <form method="POST" action="/coordinator/projects/{{ $project->id }}" style="margin:0" onsubmit="return confirm('Delete {{ addslashes($project->name) }}? This cannot be undone.')">
+                                        <form method="POST" action="/admin/projects/{{ $project->id }}" style="margin:0" onsubmit="return confirm('Delete {{ addslashes($project->name) }}? This cannot be undone.')">
                                             @csrf
                                             @method('DELETE')
                                             <button type="submit" class="btn btn-xs btn-danger">Delete</button>
@@ -946,7 +946,7 @@
 
                             {{-- Inline edit form --}}
                             <div class="project-card-edit" id="project-edit-{{ $project->id }}">
-                                <form method="POST" action="/coordinator/projects/{{ $project->id }}">
+                                <form method="POST" action="/admin/projects/{{ $project->id }}">
                                     @csrf
                                     @method('PATCH')
                                     <div class="form-grid">
@@ -971,6 +971,10 @@
                                         <div class="form-row">
                                             <label>Workspace Path</label>
                                             <input name="workspace_path" type="text" class="form-input" value="{{ $project->workspace_path }}" placeholder="e.g. C:\Users\you\projects\my-project">
+                                        </div>
+                                        <div class="form-row">
+                                            <label>Git Remote URL</label>
+                                            <input name="git_remote_url" type="text" class="form-input" value="{{ $project->git_remote_url }}" placeholder="e.g. https://github.com/org/repo.git">
                                         </div>
                                         <div class="form-row">
                                             <label>Description</label>
@@ -1027,7 +1031,7 @@
                                     </div>
                                 </div>
                                 <div class="suggestion-actions">
-                                    <form method="POST" action="/coordinator/tasks/{{ $task->id }}">
+                                    <form method="POST" action="/admin/tasks/{{ $task->id }}">
                                         @csrf
                                         @method('PATCH')
                                         <input type="hidden" name="status" value="pending">
@@ -1036,7 +1040,7 @@
                                         <input type="hidden" name="priority" value="{{ $task->priority ?? 50 }}">
                                         <button type="submit" class="btn btn-xs btn-accept">Accept</button>
                                     </form>
-                                    <form method="POST" action="/coordinator/tasks/{{ $task->id }}" onsubmit="return confirm('Dismiss this suggestion?')">
+                                    <form method="POST" action="/admin/tasks/{{ $task->id }}" onsubmit="return confirm('Dismiss this suggestion?')">
                                         @csrf
                                         @method('DELETE')
                                         <button type="submit" class="btn btn-xs btn-danger">Dismiss</button>
@@ -1068,7 +1072,7 @@
                 </div>
 
                 <div class="inline-form" id="new-provider-form">
-                    <form method="POST" action="/coordinator/providers">
+                    <form method="POST" action="/admin/providers">
                         @csrf
                         <div class="form-grid">
                             <div class="form-grid-2">
@@ -1144,7 +1148,7 @@
                                 <span class="btn btn-xs btn-ghost">Edit</span>
                             </summary>
                             <div class="expand-body">
-                                <form class="expand-form" method="POST" action="/coordinator/providers/{{ $provider->id }}">
+                                <form class="expand-form" method="POST" action="/admin/providers/{{ $provider->id }}">
                                     @csrf
                                     @method('PATCH')
                                     <div class="form-grid-2">
@@ -1212,7 +1216,7 @@
                                                     <span class="btn btn-xs btn-ghost">Edit</span>
                                                 </summary>
                                                 <div class="expand-body">
-                                                    <form class="expand-form" method="POST" action="/coordinator/provider-routes/{{ $route->id }}">
+                                                    <form class="expand-form" method="POST" action="/admin/provider-routes/{{ $route->id }}">
                                                         @csrf
                                                         @method('PATCH')
                                                         <div class="form-grid-2">
@@ -1281,7 +1285,7 @@
                                                                         <span class="btn btn-xs btn-ghost">Edit</span>
                                                                     </summary>
                                                                     <div class="expand-body">
-                                                                        <form class="expand-form" method="POST" action="/coordinator/provider-models/{{ $pm->id }}">
+                                                                        <form class="expand-form" method="POST" action="/admin/provider-models/{{ $pm->id }}">
                                                                             @csrf
                                                                             @method('PATCH')
                                                                             <div class="form-grid-2">
@@ -1310,7 +1314,7 @@
                                                                                 <button type="submit" class="btn btn-primary btn-sm">Save</button>
                                                                             </div>
                                                                         </form>
-                                                                        <form method="POST" action="/coordinator/provider-models/{{ $pm->id }}" onsubmit="return confirm('Delete model?')">
+                                                                        <form method="POST" action="/admin/provider-models/{{ $pm->id }}" onsubmit="return confirm('Delete model?')">
                                                                             @csrf
                                                                             @method('DELETE')
                                                                             <button type="submit" class="btn btn-xs btn-danger">Delete Model</button>
@@ -1327,7 +1331,7 @@
                                                             <span style="font-size:0.82rem; color:var(--accent); font-weight:600;">+ Add Model</span>
                                                         </summary>
                                                         <div class="expand-body">
-                                                            <form class="expand-form" method="POST" action="/coordinator/provider-models">
+                                                            <form class="expand-form" method="POST" action="/admin/provider-models">
                                                                 @csrf
                                                                 <input type="hidden" name="provider_route_id" value="{{ $route->id }}">
                                                                 <div class="form-grid-2">
@@ -1358,7 +1362,7 @@
                                                         </div>
                                                     </details>
 
-                                                    <form method="POST" action="/coordinator/provider-routes/{{ $route->id }}" onsubmit="return confirm('Delete this route?')">
+                                                    <form method="POST" action="/admin/provider-routes/{{ $route->id }}" onsubmit="return confirm('Delete this route?')">
                                                         @csrf
                                                         @method('DELETE')
                                                         <button type="submit" class="btn btn-xs btn-danger">Delete Route</button>
@@ -1375,7 +1379,7 @@
                                         <span style="font-size:0.82rem; color:var(--accent); font-weight:600;">+ Add Route</span>
                                     </summary>
                                     <div class="expand-body">
-                                        <form class="expand-form" method="POST" action="/coordinator/provider-routes">
+                                        <form class="expand-form" method="POST" action="/admin/provider-routes">
                                             @csrf
                                             <input type="hidden" name="provider_id" value="{{ $provider->id }}">
                                             <div class="form-grid-2">
@@ -1421,7 +1425,7 @@
                                     </div>
                                 </details>
 
-                                <form method="POST" action="/coordinator/providers/{{ $provider->id }}" onsubmit="return confirm('Delete {{ addslashes($provider->name) }}?')">
+                                <form method="POST" action="/admin/providers/{{ $provider->id }}" onsubmit="return confirm('Delete {{ addslashes($provider->name) }}?')">
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="btn btn-xs btn-danger">Delete Provider</button>
@@ -1445,7 +1449,7 @@
                 </div>
 
                 <div class="inline-form" id="new-agent-form">
-                    <form method="POST" action="/coordinator/agents">
+                    <form method="POST" action="/admin/agents">
                         @csrf
                         <div class="form-grid">
                             <div class="form-grid-2">
@@ -1491,7 +1495,7 @@
                                 <span class="btn btn-xs btn-ghost">Edit</span>
                             </summary>
                             <div class="expand-body">
-                                <form class="expand-form" method="POST" action="/coordinator/agents/{{ $agent->id }}">
+                                <form class="expand-form" method="POST" action="/admin/agents/{{ $agent->id }}">
                                     @csrf
                                     @method('PATCH')
                                     <div class="form-grid-2">
@@ -1538,7 +1542,7 @@
                                                     <span class="btn btn-xs btn-ghost">Edit</span>
                                                 </summary>
                                                 <div class="expand-body">
-                                                    <form class="expand-form" method="POST" action="/coordinator/agent-runtimes/{{ $runtime->id }}">
+                                                    <form class="expand-form" method="POST" action="/admin/agent-runtimes/{{ $runtime->id }}">
                                                         @csrf
                                                         @method('PATCH')
                                                         <div class="form-grid-2">
@@ -1625,10 +1629,13 @@
                                                             <label style="font-size:0.82rem; display:flex; align-items:center; gap:5px;">
                                                                 <input type="checkbox" name="saves_documents" value="1" @checked($runtime->saves_documents)> Saves docs
                                                             </label>
+                                                            <label style="font-size:0.82rem; display:flex; align-items:center; gap:5px;">
+                                                                <input type="checkbox" name="sandboxed" value="1" @checked($runtime->sandboxed)> Sandboxed
+                                                            </label>
                                                             <button type="submit" class="btn btn-primary btn-sm">Save</button>
                                                         </div>
                                                     </form>
-                                                    <form method="POST" action="/coordinator/agent-runtimes/{{ $runtime->id }}" onsubmit="return confirm('Delete this runtime?')">
+                                                    <form method="POST" action="/admin/agent-runtimes/{{ $runtime->id }}" onsubmit="return confirm('Delete this runtime?')">
                                                         @csrf
                                                         @method('DELETE')
                                                         <button type="submit" class="btn btn-xs btn-danger">Delete Runtime</button>
@@ -1645,7 +1652,7 @@
                                         <span style="font-size:0.82rem; color:var(--accent); font-weight:600;">+ Add Runtime</span>
                                     </summary>
                                     <div class="expand-body">
-                                        <form class="expand-form" method="POST" action="/coordinator/agent-runtimes">
+                                        <form class="expand-form" method="POST" action="/admin/agent-runtimes">
                                             @csrf
                                             <input type="hidden" name="agent_id" value="{{ $agent->id }}">
                                             <div class="form-grid-2">
@@ -1709,7 +1716,7 @@
                                     </div>
                                 </details>
 
-                                <form method="POST" action="/coordinator/agents/{{ $agent->id }}" onsubmit="return confirm('Delete {{ addslashes($agent->name) }}?')">
+                                <form method="POST" action="/admin/agents/{{ $agent->id }}" onsubmit="return confirm('Delete {{ addslashes($agent->name) }}?')">
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="btn btn-xs btn-danger">Delete Agent</button>
@@ -1733,7 +1740,7 @@
                 </div>
 
                 <div class="inline-form" id="new-workflow-form">
-                    <form method="POST" action="/coordinator/workflows">
+                    <form method="POST" action="/admin/workflows">
                         @csrf
                         <div class="form-grid">
                             <div class="form-row">

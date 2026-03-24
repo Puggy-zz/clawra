@@ -92,6 +92,14 @@ class Task extends Model
     }
 
     /**
+     * Get the sandboxes provisioned for this task.
+     */
+    public function sandboxes(): HasMany
+    {
+        return $this->hasMany(Sandbox::class);
+    }
+
+    /**
      * Get the subtasks for the task.
      */
     public function subtasks(): HasMany
