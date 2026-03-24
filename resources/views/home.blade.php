@@ -845,6 +845,11 @@
         {{-- ══════════ MAIN COLUMN ══════════ --}}
         <div class="main-col">
 
+            {{-- ── Chat ── --}}
+            <div class="panel" style="overflow:hidden; padding:0;">
+                <livewire:chat />
+            </div>
+
             {{-- ── Projects ── --}}
             <div class="panel">
                 <div class="panel-header">

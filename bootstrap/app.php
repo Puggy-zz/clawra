@@ -21,6 +21,13 @@ return Application::configure(basePath: dirname(__DIR__))
         //
     })
     ->withSchedule(function (Schedule $schedule): void {
-        $schedule->command('clawra:heartbeat')->cron('0 */5 * * *');
+        // Full run every 3 hours — aligns with OpenAI's shortest rolling window.
+        $schedule->command('clawra:heartbeat')->cron('0 */3 * * *');
+
+        // Recovery check every 15 min — cheap DB-only, catches synthetic.new 5hr reset.
+        $schedule->command('clawra:rl-recovery')->everyFifteenMinutes();
+
+        // Low-priority sweep + project suggestions — overnight only (2am–6am UTC).
+        $schedule->command('clawra:dispatch-low')->cron('0 2-6 * * *');
     })
     ->create();

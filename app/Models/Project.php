@@ -24,6 +24,7 @@ class Project extends Model
         'status',
         'state_document',
         'current_intent',
+        'workspace_path',
     ];
 
     /**
@@ -57,5 +58,16 @@ class Project extends Model
     public function conversations(): HasMany
     {
         return $this->hasMany(ProjectConversation::class);
+    }
+
+    /**
+     * Get the path to this project's app-managed data directory (index, plans, documents).
+     * e.g. {storage}/app/project-data/{id}/
+     */
+    public function projectDataPath(string $path = ''): string
+    {
+        $base = storage_path('app/project-data/'.$this->id);
+
+        return $path !== '' ? $base.'/'.ltrim($path, '/') : $base;
     }
 }

@@ -14,7 +14,7 @@ class OpenCodeRuntimeService
     /**
      * @return array{success: bool, text: string, status: string, command: string, error?: string, external_session?: array<string, mixed>, external_events?: array<int, array<string, mixed>>}
      */
-    public function execute(AgentRuntime $runtime, string $prompt): array
+    public function execute(AgentRuntime $runtime, string $prompt, ?string $workspacePath = null): array
     {
         $binary = (string) config('services.opencode.binary', 'opencode');
         $timeout = (int) config('services.opencode.timeout', 120);
@@ -41,56 +41,135 @@ class OpenCodeRuntimeService
             ->map(static fn (string $part): string => str_contains($part, ' ') ? '"'.str_replace('"', '\\"', $part).'"' : $part)
             ->implode(' ');
 
-        $result = Process::path(base_path())
+        $runPath = (is_string($workspacePath) && $workspacePath !== '' && is_dir($workspacePath))
+            ? $workspacePath
+            : base_path();
+
+        $result = Process::path($runPath)
             ->timeout($timeout)
             ->run($command);
 
-        if ($result->successful()) {
-            $decoded = json_decode($result->output(), true);
-            $text = is_array($decoded)
-                ? (string) ($decoded['text'] ?? $decoded['output'] ?? $decoded['response'] ?? $result->output())
-                : trim($result->output());
+        $events = $this->parseNdjson($result->output());
+        $errorEvent = $this->findErrorEvent($events);
 
-            $externalSession = $this->extractExternalSession($decoded, $runtime);
-            $externalEvents = $this->extractExternalEvents($decoded);
+        if ($result->successful() && $errorEvent === null) {
+            $text = $this->extractText($events, $result->output());
 
             return [
                 'success' => true,
                 'text' => $text,
                 'status' => 'completed',
                 'command' => $command,
-                'external_session' => $externalSession,
-                'external_events' => $externalEvents,
+                'external_session' => $this->extractExternalSession($events, $runtime),
+                'external_events' => $this->extractExternalEvents($events),
             ];
         }
 
-        $decoded = json_decode($result->output(), true);
+        $errorMessage = $errorEvent !== null
+            ? (string) ($errorEvent['error']['data']['message'] ?? $errorEvent['error']['name'] ?? json_encode($errorEvent['error']))
+            : (trim($result->errorOutput()) !== '' ? trim($result->errorOutput()) : trim($result->output()));
 
         return [
             'success' => false,
             'text' => '',
             'status' => 'failed',
             'command' => $command,
-            'error' => trim($result->errorOutput()) !== '' ? trim($result->errorOutput()) : trim($result->output()),
-            'external_session' => $this->extractExternalSession($decoded, $runtime),
-            'external_events' => $this->extractExternalEvents($decoded),
+            'error' => $errorMessage,
+            'external_session' => $this->extractExternalSession($events, $runtime),
+            'external_events' => $this->extractExternalEvents($events),
         ];
     }
 
     /**
-     * @param  array<string, mixed>|null  $decoded
-     * @return array<string, mixed>|null
+     * Parse NDJSON output (one JSON object per line) into an array of decoded events.
+     *
+     * @return array<int, array<string, mixed>>
      */
-    protected function extractExternalSession(?array $decoded, AgentRuntime $runtime): ?array
+    protected function parseNdjson(string $output): array
     {
-        if (! is_array($decoded)) {
-            return null;
+        $events = [];
+
+        foreach (explode("\n", trim($output)) as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            $decoded = json_decode($line, true);
+            if (is_array($decoded)) {
+                $events[] = $decoded;
+            }
         }
 
-        $sessionId = $decoded['session']['id']
-            ?? $decoded['sessionID']
-            ?? $decoded['session_id']
-            ?? null;
+        return $events;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $events
+     */
+    protected function findErrorEvent(array $events): ?array
+    {
+        foreach ($events as $event) {
+            if (($event['type'] ?? null) === 'error' && isset($event['error'])) {
+                return $event;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $events
+     */
+    protected function extractText(array $events, string $rawOutput): string
+    {
+        // Collect all assistant text parts
+        $parts = [];
+
+        foreach ($events as $event) {
+            $type = $event['type'] ?? $event['part']['type'] ?? null;
+
+            if ($type === 'text' || $type === 'step_finish') {
+                $text = $event['part']['text'] ?? $event['text'] ?? null;
+                if (is_string($text) && $text !== '') {
+                    $parts[] = $text;
+                }
+            }
+        }
+
+        if ($parts !== []) {
+            return implode('', $parts);
+        }
+
+        // Fallback: last snapshot from a step_finish event
+        foreach (array_reverse($events) as $event) {
+            if (($event['type'] ?? null) === 'step_finish') {
+                $snapshot = $event['part']['snapshot'] ?? null;
+                if (is_string($snapshot) && $snapshot !== '') {
+                    return $snapshot;
+                }
+            }
+        }
+
+        return $rawOutput;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $events
+     * @return array<string, mixed>|null
+     */
+    protected function extractExternalSession(array $events, AgentRuntime $runtime): ?array
+    {
+        $sessionId = null;
+        $title = null;
+
+        foreach ($events as $event) {
+            if (! is_string($sessionId) || $sessionId === '') {
+                $sessionId = $event['sessionID'] ?? $event['session_id'] ?? $event['session']['id'] ?? null;
+            }
+            if (! is_string($title) || $title === '') {
+                $title = $event['session']['title'] ?? null;
+            }
+        }
 
         if (! is_string($sessionId) || $sessionId === '') {
             return null;
@@ -99,49 +178,34 @@ class OpenCodeRuntimeService
         return [
             'harness' => 'opencode',
             'external_id' => $sessionId,
-            'status' => (string) ($decoded['status'] ?? 'active'),
-            'title' => (string) ($decoded['session']['title'] ?? $runtime->name),
-            'metadata' => [
-                'message_id' => $decoded['messageID'] ?? $decoded['message_id'] ?? $decoded['message']['id'] ?? null,
-                'part_id' => $decoded['partID'] ?? $decoded['part_id'] ?? null,
-                'command' => $decoded['command'] ?? null,
-                'raw' => $decoded,
-            ],
+            'status' => 'completed',
+            'title' => $title ?? $runtime->name,
+            'metadata' => ['event_count' => count($events)],
         ];
     }
 
     /**
-     * @param  array<string, mixed>|null  $decoded
+     * @param  array<int, array<string, mixed>>  $events
      * @return array<int, array<string, mixed>>
      */
-    protected function extractExternalEvents(?array $decoded): array
+    protected function extractExternalEvents(array $events): array
     {
-        if (! is_array($decoded)) {
+        if ($events === []) {
             return [];
         }
 
-        $events = [];
-
-        if (isset($decoded['events']) && is_array($decoded['events'])) {
-            foreach ($decoded['events'] as $event) {
-                if (is_array($event)) {
-                    $events[] = [
-                        'event_type' => (string) ($event['type'] ?? $event['event'] ?? 'unknown'),
-                        'external_event_id' => $event['id'] ?? null,
-                        'payload' => $event,
-                    ];
-                }
+        $sessionId = null;
+        foreach ($events as $event) {
+            $sessionId = $event['sessionID'] ?? $event['session']['id'] ?? null;
+            if ($sessionId !== null) {
+                break;
             }
         }
 
-        if ($events === [] && isset($decoded['session']) && is_array($decoded['session'])) {
-            $events[] = [
-                'event_type' => 'session.completed',
-                'external_event_id' => $decoded['session']['id'] ?? null,
-                'payload' => $decoded,
-            ];
-        }
-
-        return $events;
+        return [[
+            'event_type' => 'session.completed',
+            'external_event_id' => $sessionId,
+            'payload' => ['event_count' => count($events)],
+        ]];
     }
 }

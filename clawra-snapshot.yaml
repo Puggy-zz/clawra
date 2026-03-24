@@ -1,0 +1,134 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - heading "Clawra Phase 0 Control Room" [level=1] [ref=e5]
+      - paragraph [ref=e6]: Track orchestration, keep agent and provider settings in sync with the database, and open deeper CRUD controls only when you need them.
+    - button "Run Heartbeat" [ref=e9]
+  - generic [ref=e10]:
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - generic [ref=e14]:
+            - heading "Coordinator Chat" [level=2] [ref=e15]
+            - paragraph [ref=e16]: Each project can have multiple conversations. Start fresh threads for bug fixes, experiments, or intake without polluting the main thread.
+          - generic [ref=e17]:
+            - generic [ref=e18]:
+              - combobox [ref=e19]:
+                - option "Coordinator Inbox" [selected]
+              - combobox [ref=e20]:
+                - option [selected]
+            - group [ref=e21]:
+              - generic "New Conversation" [ref=e22]
+        - generic [ref=e23]:
+          - generic [ref=e25]:
+            - generic [ref=e26]: Coordinator
+            - generic [ref=e27]: Hello. This conversation starts fresh, but I know the project summary and available agents. Ask me to plan, research, or shape work into a task.
+          - generic [ref=e28]:
+            - generic [ref=e29]:
+              - textbox "Ask Clawra to plan, research, or track the next task..." [ref=e30]
+              - button "Send" [ref=e31]
+            - generic [ref=e32]:
+              - text: "Project:"
+              - strong [ref=e33]: Coordinator Inbox
+              - text: "· Conversation:"
+              - strong
+              - text: "· Status: Ready"
+      - generic [ref=e34]:
+        - generic [ref=e36]:
+          - heading "Pending Draft" [level=3] [ref=e37]
+          - paragraph [ref=e38]: The current task draft lives here until you confirm, revise, or cancel it.
+        - generic [ref=e40]: No draft in progress. Ask Clawra about a task to begin refining one.
+      - generic [ref=e41]:
+        - generic [ref=e43]:
+          - heading "Activity" [level=3] [ref=e44]
+          - paragraph [ref=e45]: Append-only coordinator and runtime history, plus resumable external session references.
+        - generic [ref=e46]:
+          - generic [ref=e47]: No orchestration activity logged yet.
+          - generic [ref=e48]:
+            - generic [ref=e49]: External sessions
+            - generic [ref=e51]: No external runtime sessions recorded yet.
+      - generic [ref=e52]:
+        - generic [ref=e53]:
+          - generic [ref=e54]:
+            - heading "Tracked Tasks" [level=3] [ref=e55]
+            - paragraph [ref=e56]: Compact task cards keep the queue readable while exposing edit and delete controls on demand.
+          - group [ref=e58]:
+            - generic "New Task" [ref=e59]
+            - option "Choose project" [selected]
+            - option "Coordinator Inbox"
+            - option "Choose workflow" [selected]
+            - option "Suggested agent" [selected]
+        - generic [ref=e61]: No tasks have been captured yet.
+      - generic [ref=e62]:
+        - generic [ref=e64]:
+          - heading "Recent Heartbeats" [level=3] [ref=e65]
+          - paragraph [ref=e66]: Latest provider sync and queueing decisions.
+        - generic [ref=e68]: No heartbeat runs recorded yet.
+      - generic [ref=e69]:
+        - generic [ref=e70]:
+          - generic [ref=e71]:
+            - heading "Projects & Workflows" [level=3] [ref=e72]
+            - paragraph [ref=e73]: Phase 0 objects stay visible, while creation forms stay tucked away until needed.
+          - generic [ref=e74]:
+            - group [ref=e75]:
+              - generic "New Project" [ref=e76]
+            - group [ref=e77]:
+              - generic "New Workflow" [ref=e78]
+        - article [ref=e81]:
+          - heading "Coordinator Inbox" [level=4] [ref=e82]
+          - generic [ref=e83]: active · 0 tasks
+          - generic [ref=e84]: Waiting for a new orchestration request
+    - generic [ref=e85]:
+      - generic [ref=e87]:
+        - generic [ref=e88]:
+          - heading "Agents" [level=3] [ref=e89]
+          - paragraph [ref=e90]: Each logical agent can expose multiple runtimes, so coordinator routing can shift across Laravel AI, OpenCode, and Codex later.
+        - group [ref=e91]:
+          - generic "New Agent" [ref=e92]
+          - option "No fallback" [selected]
+        - group [ref=e93]:
+          - generic "New Runtime" [ref=e94]
+          - option "Choose agent" [selected]
+          - option "laravel_ai" [selected]
+          - option "opencode"
+          - option "codex"
+          - option "Primary route" [selected]
+          - option "Primary model" [selected]
+          - option "Fallback route" [selected]
+          - option "Fallback model" [selected]
+          - option "active" [selected]
+          - option "disabled"
+      - generic [ref=e96]:
+        - generic [ref=e97]:
+          - heading "Providers" [level=3] [ref=e98]
+          - paragraph [ref=e99]: Providers now hold logical upstreams, while route and model details show how each harness can actually reach them.
+        - group [ref=e100]:
+          - generic "New Provider" [ref=e101]
+          - option "subscription" [selected]
+          - option "hybrid"
+          - option "api-only"
+          - option "Anthropic-compatible" [selected]
+          - option "native"
+          - option "OpenAI-compatible"
+          - option "active" [selected]
+          - option "degraded"
+          - option "rate-limited"
+          - option "disabled"
+        - group [ref=e102]:
+          - generic "New Route" [ref=e103]
+          - option "Choose provider" [selected]
+          - option "laravel_ai" [selected]
+          - option "opencode"
+          - option "codex"
+          - option "api_key" [selected]
+          - option "chatgpt_oauth"
+          - option "provider_oauth"
+          - option "active" [selected]
+          - option "degraded"
+          - option "rate-limited"
+          - option "disabled"
+        - group [ref=e104]:
+          - generic "New Model" [ref=e105]
+          - option "Choose route" [selected]
+          - option "active" [selected]
+          - option "disabled"

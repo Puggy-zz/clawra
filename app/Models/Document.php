@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Document extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'title',
+        'file_name',
         'content',
         'file_path',
-        'file_name',
         'file_type',
         'project_id',
         'task_id',

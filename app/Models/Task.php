@@ -21,12 +21,15 @@ class Task extends Model
     protected $fillable = [
         'project_id',
         'project_conversation_id',
+        'depends_on_task_id',
         'name',
         'description',
         'status',
+        'priority',
         'workflow_id',
         'recommended_agent_id',
         'current_subtask_id',
+        'result',
     ];
 
     /**
@@ -35,6 +38,31 @@ class Task extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class);
+    }
+
+    /**
+     * Get the task this task depends on before it can be queued.
+     */
+    public function dependsOn(): BelongsTo
+    {
+        return $this->belongsTo(Task::class, 'depends_on_task_id');
+    }
+
+    /**
+     * Get the tasks that depend on this task.
+     */
+    public function dependents(): HasMany
+    {
+        return $this->hasMany(Task::class, 'depends_on_task_id');
+    }
+
+    public function isReadyToQueue(): bool
+    {
+        if ($this->depends_on_task_id === null) {
+            return true;
+        }
+
+        return $this->dependsOn?->status === 'completed';
     }
 
     /**

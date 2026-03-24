@@ -26,6 +26,8 @@ class ProviderModel extends Model
         'context_window',
         'priority',
         'is_default',
+        'active_requests',
+        'max_concurrent_requests',
         'status',
     ];
 
@@ -37,7 +39,14 @@ class ProviderModel extends Model
             'context_window' => 'int',
             'priority' => 'int',
             'is_default' => 'bool',
+            'active_requests' => 'int',
+            'max_concurrent_requests' => 'int',
         ];
+    }
+
+    public function hasAvailableConcurrencySlot(): bool
+    {
+        return $this->active_requests < $this->max_concurrent_requests;
     }
 
     public function route(): BelongsTo

@@ -11,16 +11,18 @@ use App\Models\ProviderRoute;
 use App\Models\Task;
 use App\Models\Workflow;
 use App\Services\HeartbeatScheduler;
-use App\Services\ProviderRegistry;
+use App\Services\QuotaSyncService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(Tests\TestCase::class, RefreshDatabase::class);
 
 it('can be instantiated', function () {
-    expect(new HeartbeatScheduler(new ProviderRegistry))->toBeInstanceOf(HeartbeatScheduler::class);
+    expect(app(HeartbeatScheduler::class))->toBeInstanceOf(HeartbeatScheduler::class);
 });
 
 it('queues eligible pending tasks and logs the heartbeat', function () {
+    $this->mock(QuotaSyncService::class)->shouldReceive('syncAll')->andReturn([]);
+
     Agent::factory()->create(['name' => 'Planner']);
 
     Provider::factory()->create([
@@ -64,12 +66,13 @@ it('queues eligible pending tasks and logs the heartbeat', function () {
         'status' => 'pending',
     ]);
 
-    $scheduler = new HeartbeatScheduler(new ProviderRegistry);
-    $log = $scheduler->execute();
+    $log = app(HeartbeatScheduler::class)->execute();
 
     expect($log)->toBeInstanceOf(HeartbeatLog::class)
         ->and(HeartbeatLog::query()->count())->toBe(1)
         ->and($task->refresh()->status)->toBe('in-progress')
         ->and($log->tasks_queued)->toHaveCount(1)
-        ->and($log->provider_status)->toHaveCount(1);
+        ->and($log->provider_status)->toHaveCount(1)
+        ->and($log->trigger)->toBe('manual')
+        ->and($log->run_type)->toBe('full');
 });

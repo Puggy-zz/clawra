@@ -86,17 +86,18 @@ The coordinator reads this registry before every delegation decision. Logging fr
 
 Each agent is assigned a distinct primary model to avoid synthetic.new concurrency conflicts. The table below reflects defaults for a single-pack synthetic.new subscription.
 
-| Agent | Role | Default Model | Fallback |
-|---|---|---|---|
-| Clawra (Coordinator) | Routing, decomposition, project state | DeepSeek-V3-0324 (synthetic.new) | Gemini API (free tier) |
-| Planner | Project breakdown, spec writing, implementation plans | Kimi-K2-Instruct (synthetic.new) | DeepSeek-V3 |
-| Researcher | Web search, summarisation, fact-finding | TBD — see §5.5 | — |
-| Developer | Code generation via opencode in sandbox | opencode (model-agnostic) | configurable |
-| Test Writer | Writes failing tests per spec | opencode (model-agnostic) | configurable |
-| Reviewer | Code review, test validation, spec compliance | Qwen3-Coder (synthetic.new) | DeepSeek-R1 |
-| Voice Interface | STT/TTS handling, wake word bridge | Local (Whisper + Porcupine) | API fallback |
+| Agent | Role | Runs Via | Queue | Sandbox | Default Model | Fallback |
+|---|---|---|---|---|---|---|
+| Clawra (Coordinator) | Routing, decomposition, project state, user interaction | Laravel AI SDK | No (synchronous) | No | DeepSeek-V3-0324 (synthetic.new) | Gemini API (free tier) |
+| Planner | Project breakdown, spec writing, implementation plans | Laravel AI SDK | No (synchronous) | No | Kimi-K2-Instruct (synthetic.new) | DeepSeek-V3 |
+| Researcher | Web search, summarisation, fact-finding | Laravel AI SDK + synthetic.new /search | Yes (low) | Yes | synthetic.new /search | Gemini |
+| Developer | Code generation via harness in sandbox | Harness (opencode etc.) | Yes (low) | Yes | opencode (model-agnostic) | configurable |
+| Test Writer | Writes failing tests per spec | Harness | Yes (low) | Yes | opencode (model-agnostic) | configurable |
+| Reviewer | Code review, test validation, spec compliance | Harness | Yes (low) | Yes | Qwen3-Coder (synthetic.new) | DeepSeek-R1 |
+| Git | Merge to main, conflict resolution, push to remote, trigger re-index | Process facade | Yes (low) | No | — | — |
+| Voice Interface | STT/TTS handling, wake word bridge | Local (Whisper + Porcupine) | No | No | Local | API fallback |
 
-Clawra and the Planner run directly through the Laravel AI SDK. The Developer, Test Writer, and Reviewer operate via opencode inside Docker Sandboxes. Additional agents (Browser, File Manager, DevOps) deferred to a later phase.
+The Coordinator and Planner run directly through the Laravel AI SDK (synchronous, no sandbox). The Researcher, Developer, Test Writer, and Reviewer run via queued jobs; the Researcher and coding agents operate inside Docker Sandboxes. The Git Agent runs directly via Laravel's Process facade on the host filesystem. Additional agents (Browser, File Manager, DevOps) deferred to a later phase.
 
 ### 5.4 Developer Agent & opencode Integration
 
@@ -132,9 +133,20 @@ This needs a brief evaluation spike before Phase 0 finalises the agent roster. T
 
 ### 5.6 Planning Workflow
 
-Planning is a distinct activity separate from task execution. Before work begins on a new feature or bug fix, the user works with the Planner agent through the NativePHP UI to produce a project spec or implementation plan. This results in a structured plan that is stored against the project.
+Planning is a distinct activity separate from task execution. Before work begins on a new feature or bug fix, the coordinator identifies that planning is needed and asks the user to confirm before handing off. The user then works with the Planner agent through the NativePHP UI in a back-and-forth conversation (streaming, synchronous — user waits for output) to produce a project spec or implementation plan.
 
-When tasks are derived from the plan, the relevant portions of the plan are attached to each task as context — the developer agent does not re-read the entire project plan, only the parts germane to the specific subtasks it is executing.
+**Planner context:** For existing projects, the Planner reads from the indexed codebase context (vector search over embeddings) rather than requiring filesystem or sandbox access. For new projects, it works from the description and goals provided by the user.
+
+**Plan format:** The Planner uses structured output that enforces a consistent schema (milestones, goals, tasks, acceptance criteria). This serves two purposes: ensuring nothing is missed during review, and enabling deterministic plan→task conversion without a secondary LLM pass.
+
+**Plan storage:** The resulting plan is saved as a Document in the database attached to the project. No filesystem access is required from the Planner.
+
+**Plan review and task creation:**
+1. User reviews the plan in the UI
+2. For new projects: user selects the project folder; system sets `workspace_path`, runs setup steps (git init, env, Dockerfile — whatever is needed to enable sandbox provisioning), then converts the plan into tasks
+3. For existing projects: plan is converted directly into tasks
+
+When tasks are derived from the plan, the relevant portions are attached to each task as context — agents do not re-read the entire plan, only the parts germane to their specific subtask.
 
 **Automated planning from coding agents:** Most supported coding CLI tools (including opencode) can generate their own internal implementation plan before beginning work. Rather than always prompting the user to review these, the coordinator can intercept the plan output and automatically review it — approving it or flagging concerns — so the user is only pulled in when something needs genuine human judgment. This path should be explored as an alternative to always surfacing planning decisions to the UI.
 
@@ -150,17 +162,50 @@ Tasks are not simply delegated to an agent with a prompt to "follow a workflow."
 
 **Sandboxes and worktrees across subtasks:** A key design question for Phase 1 is whether subtasks within a single workflow share one persistent sandbox or each get their own. Sharing a sandbox is simpler and keeps incremental work (installed packages, build artefacts) warm between subtasks. Using separate sandboxes or git worktrees per subtask allows easier rollback and parallel execution. The tradeoffs need hands-on evaluation before this is finalised.
 
+**Sandbox sharing:** All subtasks within a single workflow share one persistent sandbox. They run sequentially inside it, keeping installed packages, build artefacts, and Docker image cache warm across subtasks.
+
 **Initial TDD workflow** (assumes Laravel + Pest v4):
 
 1. **Test-write subtask** — Test Writer agent writes failing Pest tests against the spec and acceptance criteria
 2. **Implement subtask** — Developer agent implements until Pest unit and feature tests pass
 3. **Review subtask** — Reviewer agent inspects the diff and test results against the original spec; runs the full test suite including any configured end-to-end tests; either approves, requests changes (returning to the implement subtask), or escalates to the user
+4. **Git subtask** — Git Agent merges the feature branch to main, pushes to remote, and triggers a codebase index update
 
 Projects without an existing test suite receive a lighter default: the Test Writer only writes tests for new code, building coverage incrementally.
 
 ### 5.8 Codebase Indexing
 
-A robust codebase indexing and context engine is important for giving agents structural awareness of each project without overloading context windows. No current tooling has been evaluated that cleanly supports PHP and Laravel to the required level. This is a research task before Phase 2 — the right option needs to be identified before committing to an integration.
+Codebase context is provided to agents via two complementary layers. Both are generated after each merge to main and stored in `{app}/ProjectData/{project_id}/`.
+
+**Layer 1 — Repo-map (structural overview)**
+
+A compact Markdown document summarising the entire codebase structure: files, classes, interfaces, traits, methods, properties, and their relationships. Generated using tree-sitter with the PHP grammar (and others for polyglot projects). Classes and symbols are ranked by reference frequency (PageRank on the dependency graph, based on Aider's repo-map algorithm) so the most central parts of the codebase appear first.
+
+- Generated by a custom Clawra service (tree-sitter + PHP grammar)
+- Pure static analysis — no inference cost, regenerates in milliseconds
+- Stored as a Markdown file in `ProjectData/{project_id}/repo-map.md`
+- Injected into the Planner's context upfront so it has a holistic view of the codebase before planning begins
+- Also available to Developer and Reviewer agents as orientation context
+
+**Layer 2 — Semantic search (embedding-based RAG)**
+
+Code chunks embedded into pgvector for natural-language retrieval. Used when agents need to find specific implementations, patterns, or logic that may not be obvious from the structural map alone.
+
+- **Chunking:** CocoIndex (Rust, incremental, tree-sitter for syntax-aware chunk boundaries)
+- **Embedding model:** nomic-embed-code or CodeRankEmbed, served via Ollama (runs natively on Windows, HTTP REST)
+- **Storage:** PostgreSQL + pgvector — queryable from Laravel via `pgvector/pgvector-php`
+- **Agent access:** Laravel Planner queries directly via Eloquent; opencode agents in Docker reach the same Postgres instance or a Cocode MCP wrapper
+
+**Indexing triggers:**
+- **New project added (existing codebase):** both layers generated immediately when `workspace_path` is confirmed
+- **New project (blank):** first index generated after the first task merges to main (typically the framework install task)
+- **Ongoing:** Git Agent triggers both layers to regenerate after every successful merge to main
+
+The index always reflects the state of `main`. Agents working in sandbox branches do not trigger mid-task re-indexing.
+
+**Index storage:** Both layers stored in `{app}/ProjectData/{project_id}/`. The repo-map is a single Markdown file. The pgvector embeddings live in the shared PostgreSQL instance in a per-project collection.
+
+**Task dependencies:** Tasks support a `depends_on` relationship. For new projects, setup tasks (e.g. "Install Laravel") are prerequisites for subsequent tasks and must complete before dependents are queued.
 
 ### 5.9 Docker Sandbox Environments
 
@@ -255,24 +300,25 @@ NativePHP wraps the full application as a desktop app with system tray integrati
 | Coordinator fallback | Gemini API (free tier) | Zero-cost fallback when synthetic.new is rate-limited |
 | Dev CLI | opencode | Runs inside Docker Sandbox; client/server integration model |
 | Sandbox | Docker Sandboxes (Docker Desktop for Windows) | microVM-based; experimental on Windows |
-| Code indexer | TBD — needs research | PHP/Laravel support required; current options unsatisfactory |
-| Embeddings | nomic-ai/nomic-embed-text-v1.5 | Via synthetic.new; free, no rate limit impact — provisional until indexer chosen |
-| Vector storage | PostgreSQL + pgvector | Provisional until indexer chosen |
+| Repo-map | Custom (tree-sitter + PHP grammar) | Structural overview; Aider repo-map algorithm; stored as Markdown in ProjectData |
+| Code chunker | CocoIndex (Rust) | Incremental, tree-sitter chunk boundaries, feeds pgvector |
+| Embedding model | nomic-embed-code / CodeRankEmbed | Via Ollama (Windows native, HTTP REST); PHP included in training data |
+| Vector storage | PostgreSQL + pgvector | Queryable from Laravel via pgvector-php; same Postgres instance as app |
 | Voice (wake word) | Picovoice Porcupine | Local, Windows-compatible |
 | Voice (STT) | Whisper (local) | Privacy-preserving; API fallback |
 | Voice (TTS) | ElevenLabs + Windows TTS fallback | Via Laravel AI SDK |
 | UI | Livewire / Filament | Project/task management, provider status, logs |
 | Database | PostgreSQL (Windows native) | JSON columns for project state |
-| Queue | Redis + Laravel Horizon | Agent job visibility and monitoring |
+| Queue | Database queue driver | `high` and `low` named queues; visibility via custom Livewire dashboard |
 
 ---
 
 ## 9. Data Model (High Level)
 
 ```
-providers           — inference providers, models, rate limits, and current usage state
-projects            — project metadata, goals, and state documents
-tasks               — units of work with assigned workflow, status, and current subtask
+providers           — inference providers, models, rate limits, current usage state, active concurrency counters
+projects            — project metadata, goals, state documents, workspace_path
+tasks               — units of work with assigned workflow, status, current subtask, depends_on
 subtasks            — individual steps within a task workflow, with agent, inputs, and outputs
 workflows           — workflow definitions (ordered subtask types and routing rules)
 task_logs           — granular output, request counts, and timing per subtask
@@ -280,6 +326,7 @@ review_logs         — Reviewer agent decisions, diffs reviewed, escalations
 agents              — agent definitions (role, prompt, tools, model assignment)
 sandboxes           — sandbox metadata and status per project
 heartbeat_logs      — record of each scheduler pass, decisions made, tasks queued
+documents           — plans, research, specs; scoped to project or global (SavedDocuments)
 ```
 
 ---
@@ -298,12 +345,15 @@ heartbeat_logs      — record of each scheduler pass, decisions made, tasks que
 - Validate Laravel AI SDK fallback mechanism (synthetic.new → Gemini) under rate limit conditions
 - Minimal Livewire UI
 
-### Phase 1 — Developer Agent & Sandboxing
+### Phase 1 — Developer Agent, Sandboxing & Planning Flow
+- Coordinator → Planner handoff with user confirmation
+- Planner structured output schema (enforced format for deterministic plan → task conversion)
+- Plan review UI and plan → task conversion (new project setup flow + existing project flow)
+- Git Agent (merge to main, push, trigger re-index)
 - Docker Sandbox manager (Process facade)
 - Custom sandbox template with credentials and opencode config
 - opencode client/server integration
 - Evaluate opencode Desktop app monitoring integration (detect vs manage)
-- Validate sandbox-per-project vs per-subtask approach
 - Test Writer agent subtask
 - Developer agent subtask
 - Reviewer agent subtask
@@ -312,12 +362,13 @@ heartbeat_logs      — record of each scheduler pass, decisions made, tasks que
 - Task cost estimation (basic, log-driven)
 - Clawra routing logic with provider registry awareness
 
-### Phase 2 — Planning & Codebase Indexing
-- Structured planning flow in NativePHP UI (user + Planner)
-- Plan-to-task context extraction (relevant plan portions attached to subtasks)
+### Phase 2 — Codebase Indexing
+- Repo-map generation (custom tree-sitter + PHP grammar service, stored in ProjectData)
+- CocoIndex integration (incremental chunking → pgvector)
+- Ollama embedding model setup (nomic-embed-code / CodeRankEmbed, Windows native)
+- Planner reads repo-map and queries pgvector for codebase context
+- Indexing triggers: on project add, on first task merge, on every subsequent merge (via Git Agent)
 - Automated coordinator plan review (coordinator intercepts opencode plan output)
-- Research and select codebase indexer with PHP/Laravel support
-- Integrate chosen indexer; wire up as agent tool
 
 ### Phase 3 — Voice
 - Whisper STT integration
@@ -356,7 +407,7 @@ heartbeat_logs      — record of each scheduler pass, decisions made, tasks que
 3. **Research agent implementation** — Evaluate synthetic.new `/search` endpoint vs Firecrawl vs other options before Phase 0 finalises.
 4. **opencode Desktop app monitoring integration** — Detect-and-connect vs manage-and-expose? Needs a brief spike in Phase 1.
 5. **Subtask sandbox sharing** — Should workflow subtasks share a single persistent sandbox per project or use separate sandboxes/worktrees? Tradeoffs between simplicity/warmth and isolation/rollback need hands-on evaluation.
-6. **Codebase indexer** — No satisfactory PHP/Laravel-supporting option identified yet. Needs a research pass before Phase 2.
+6. **Codebase indexer** — Resolved: two-layer approach (repo-map via tree-sitter + semantic search via CocoIndex/pgvector/Ollama). Implement in Phase 2.
 7. **opencode model switching** — How does opencode's on-the-fly model switching interact with the provider registry fallback config? Does it support the low-priority/fallback pattern cleanly?
 
 ---

@@ -12,11 +12,24 @@ class ProjectSeeder extends Seeder
     public function run(): void
     {
         Project::query()->updateOrCreate(
-            ['name' => 'Clawra Phase 0'],
+            ['name' => 'Inbox'],
             [
-                'description' => 'Initial implementation of the Clawra system foundation.',
-                'goals' => 'Complete provider awareness, coordinator orchestration, workflows, and heartbeat operations.',
+                'description' => 'Holding area for tasks and ideas not yet assigned to a specific project.',
+                'goals' => null,
                 'status' => 'active',
+                'workspace_path' => 'D:/Projects/Clawra/',
+                'state_document' => [],
+                'current_intent' => null,
+            ]
+        );
+
+        Project::query()->updateOrCreate(
+            ['name' => 'Clawra'],
+            [
+                'description' => 'Personal AI orchestration system — Laravel + NativePHP desktop app for Windows.',
+                'goals' => 'Build a coordinator-driven agent orchestration platform leveraging existing inference subscriptions without additional per-token costs.',
+                'status' => 'active',
+                'workspace_path' => 'D:/Projects/Clawra/',
                 'state_document' => [
                     'summary' => 'Phase 0 foundation work is tracked here.',
                     'current_working_intent' => 'Complete the foundational orchestration loop.',

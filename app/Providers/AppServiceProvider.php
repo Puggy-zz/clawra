@@ -31,7 +31,10 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(AgentService::class, fn (): AgentService => new AgentService);
         $this->app->singleton(ProviderService::class, fn ($app): ProviderService => new ProviderService($app->make(ProviderRegistry::class)));
         $this->app->singleton(LogService::class, fn (): LogService => new LogService);
-        $this->app->singleton(HeartbeatScheduler::class, fn ($app): HeartbeatScheduler => new HeartbeatScheduler($app->make(ProviderRegistry::class)));
+        $this->app->singleton(HeartbeatScheduler::class, fn ($app): HeartbeatScheduler => new HeartbeatScheduler(
+            $app->make(ProviderRegistry::class),
+            $app->make(\App\Services\HeartbeatOrchestrator::class),
+        ));
     }
 
     public function boot(): void {}

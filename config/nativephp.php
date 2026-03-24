@@ -144,10 +144,16 @@ return [
      * The queue workers that get auto-started on your application start.
      */
     'queue_workers' => [
-        'default' => [
-            'queues' => ['default'],
-            'memory_limit' => 128,
-            'timeout' => 60,
+        'high' => [
+            'queues' => ['high', 'default'],
+            'memory_limit' => 256,
+            'timeout' => 120,
+            'sleep' => 1,
+        ],
+        'low' => [
+            'queues' => ['low'],
+            'memory_limit' => 512,
+            'timeout' => 3600,
             'sleep' => 3,
         ],
     ],

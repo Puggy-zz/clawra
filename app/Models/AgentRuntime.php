@@ -30,6 +30,7 @@ class AgentRuntime extends Model
         'tools',
         'config',
         'is_default',
+        'saves_documents',
         'status',
     ];
 
@@ -39,6 +40,7 @@ class AgentRuntime extends Model
             'tools' => 'array',
             'config' => 'array',
             'is_default' => 'bool',
+            'saves_documents' => 'bool',
         ];
     }
 

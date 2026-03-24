@@ -220,6 +220,13 @@ class ProviderRegistry
             return $resetAt instanceof CarbonInterface ? $resetAt->isFuture() : true;
         }
 
+        $weeklyRemaining = $usageSnapshot['weekly_requests_remaining'] ?? null;
+        $weeklyResetAt = $this->parseDate($usageSnapshot['weekly_reset_at'] ?? null);
+
+        if (is_numeric($weeklyRemaining) && (int) $weeklyRemaining <= 0 && $weeklyResetAt instanceof CarbonInterface && $weeklyResetAt->isFuture()) {
+            return true;
+        }
+
         return false;
     }
 
@@ -245,11 +252,24 @@ class ProviderRegistry
         $used = (int) ($usageSnapshot['requests_used'] ?? 0) + 1;
         $remaining = is_numeric($requestsPerWindow) ? max(0, (int) $requestsPerWindow - $used) : ($usageSnapshot['requests_remaining'] ?? null);
 
+        $weeklyResetAt = $this->parseDate($usageSnapshot['weekly_reset_at'] ?? null);
+
+        if ($weeklyResetAt instanceof CarbonInterface && $weeklyResetAt->isPast()) {
+            app(\App\Services\RateLimitRecoveryService::class)->clearWeeklyCounters($route);
+            $usageSnapshot = $route->usage_snapshot ?? [];
+        }
+
+        $weeklyUsed = (int) ($usageSnapshot['weekly_requests_used'] ?? 0) + 1;
+        $weeklyLimit = $rateLimits['weekly_requests_limit'] ?? null;
+        $weeklyRemaining = is_numeric($weeklyLimit) ? max(0, (int) $weeklyLimit - $weeklyUsed) : ($usageSnapshot['weekly_requests_remaining'] ?? null);
+
         $usageSnapshot['last_used_at'] = now()->toISOString();
         $usageSnapshot['requests_used'] = $used;
         $usageSnapshot['requests_remaining'] = $remaining;
         $usageSnapshot['current_model'] = $model;
         $usageSnapshot['reset_at'] = $usageSnapshot['reset_at'] ?? now()->addHours(max($windowHours, 1))->toISOString();
+        $usageSnapshot['weekly_requests_used'] = $weeklyUsed;
+        $usageSnapshot['weekly_requests_remaining'] = $weeklyRemaining;
 
         $route->usage_snapshot = $usageSnapshot;
         $saved = $route->save();
@@ -266,7 +286,7 @@ class ProviderRegistry
         return $route instanceof ProviderRoute ? $this->markRouteRateLimited($route, $resetAt) : false;
     }
 
-    public function markRouteRateLimited(ProviderRoute|string $route, ?CarbonInterface $resetAt = null): bool
+    public function markRouteRateLimited(ProviderRoute|string $route, ?CarbonInterface $resetAt = null, string $type = 'window'): bool
     {
         $route = is_string($route) ? $this->getRouteByName($route) : $route;
 
@@ -275,8 +295,16 @@ class ProviderRegistry
         }
 
         $usageSnapshot = $route->usage_snapshot ?? [];
-        $usageSnapshot['requests_remaining'] = 0;
-        $usageSnapshot['reset_at'] = ($resetAt ?? now()->addHours(5))->toISOString();
+        $resolvedResetAt = $resetAt ?? now()->addHours(5);
+        $isWeekly = $type === 'weekly' || ($resetAt instanceof CarbonInterface && $resetAt->diffInHours(now()) > 24);
+
+        if ($isWeekly) {
+            $usageSnapshot['weekly_requests_remaining'] = 0;
+            $usageSnapshot['weekly_reset_at'] = $resolvedResetAt->toISOString();
+        } else {
+            $usageSnapshot['requests_remaining'] = 0;
+            $usageSnapshot['reset_at'] = $resolvedResetAt->toISOString();
+        }
 
         $route->usage_snapshot = $usageSnapshot;
         $route->status = 'rate-limited';

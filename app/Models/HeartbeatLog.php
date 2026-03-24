@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 class HeartbeatLog extends Model
 {
@@ -25,6 +25,8 @@ class HeartbeatLog extends Model
      */
     protected $fillable = [
         'timestamp',
+        'trigger',
+        'run_type',
         'decisions',
         'tasks_queued',
         'provider_status',
